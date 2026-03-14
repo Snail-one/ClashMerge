@@ -44,7 +44,7 @@ http://127.0.0.1:3000/
 docker compose up -d --build
 ```
 
-首次启动会自动生成随机管理令牌，并输出到服务日志。只有在你明确需要固定管理令牌时，才建议设置 `MANAGEMENT_TOKEN` 环境变量覆盖它。
+首次启动会自动生成随机管理令牌并写入 `data/system.json`。只有在你明确需要固定管理令牌时，才建议设置 `MANAGEMENT_TOKEN` 环境变量覆盖它。
 
 默认配置见：
 
@@ -75,3 +75,4 @@ docker compose up -d --build
 - 日志查看
 - 安全加固
 - 容器部署
+

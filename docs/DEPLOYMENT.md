@@ -42,7 +42,7 @@ http://127.0.0.1:3000/
 
 1. 克隆或下载项目代码。
 2. 执行 `npm install` 安装依赖。
-3. 执行 `npm start` 启动服务，首次启动会自动生成随机管理令牌。
+3. 执行 `npm start` 启动服务，首次启动会自动生成随机管理令牌并写入 `data/system.json`。
 4. 打开管理页面，输入管理令牌登录。
 
 运行数据会保存在 `data/` 目录下，包括：
@@ -159,7 +159,7 @@ environment:
 
 - 容器部署时必须把 `HOST` 设为 `0.0.0.0`，否则容器外无法访问服务。
 - `./data:/app/data` 会把运行数据持久化到宿主机当前目录下的 `data/`。
-- 默认不设置 `MANAGEMENT_TOKEN` 时，程序会在首次启动时自动生成随机管理令牌，并在服务日志中输出。
+- 默认不设置 `MANAGEMENT_TOKEN` 时，程序会在首次启动时自动生成随机管理令牌并写入 `data/system.json`。
 
 ### 2. 启动容器
 
@@ -225,9 +225,10 @@ docker compose up -d --build
 
 部署前建议确认以下事项：
 
-- 确认首次启动后已安全保存自动生成的管理令牌，或自行显式设置 `MANAGEMENT_TOKEN`
+- 确认首次启动后已从 `data/system.json` 安全保存自动生成的管理令牌，或自行显式设置 `MANAGEMENT_TOKEN`
 - 不要把 `data/` 下的运行数据提交到仓库
 - 如果需要局域网或公网访问，优先通过反向代理暴露
 - 非必要不要开启 `ALLOW_PRIVATE_REMOTE_SOURCES`
 - 设置正确的 `PUBLIC_BASE_URL`
 - 定期检查 `data/logs/` 和 `data/builds/` 的内容是否符合预期
+
