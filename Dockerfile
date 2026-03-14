@@ -15,8 +15,6 @@ COPY public ./public
 RUN mkdir -p /app/data/cache /app/data/output /app/data/builds /app/data/logs /app/data/scripts \
   && chown -R node:node /app
 
-USER node
-
 VOLUME ["/app/data"]
 
 EXPOSE 3000
