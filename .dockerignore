@@ -1,0 +1,6 @@
+﻿node_modules
+data
+.git
+.gitignore
+npm-debug.log
+coverage

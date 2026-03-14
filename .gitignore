@@ -1,0 +1,14 @@
+﻿node_modules/
+data/cache/
+data/output/
+data/builds/
+data/logs/
+data/scripts/
+data/sources.json
+data/system.json
+coverage/
+.env
+.env.*
+*.local
+.DS_Store
+Thumbs.db

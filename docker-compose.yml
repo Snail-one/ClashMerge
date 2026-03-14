@@ -1,0 +1,26 @@
+﻿services:
+  proxy-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: proxy-manager
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MANAGEMENT_TOKEN: change-this-to-a-long-random-token
+      PUBLIC_BASE_URL: http://127.0.0.1:3000/
+      MAX_BUILD_RECORDS: 10
+      MAX_LOG_RETENTION_DAYS: 10
+      MAX_TOTAL_LOG_BYTES: 1073741824
+      REMOTE_SOURCE_TIMEOUT_MS: 10000
+      MAX_REMOTE_SOURCE_BYTES: 4194304
+      TRANSFORM_TIMEOUT_MS: 1500
+      MAX_LOGIN_ATTEMPTS: 5
+      LOGIN_WINDOW_MS: 600000
+      API_RATE_LIMIT_MAX: 240
+      API_RATE_LIMIT_WINDOW_MS: 60000
+    volumes:
+      - ./data:/app/data

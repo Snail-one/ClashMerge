@@ -1,0 +1,298 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clash Subscription Manager</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="authGate" class="auth-gate hidden" aria-hidden="true">
+      <div class="auth-card">
+        <p class="kicker">Protected Console</p>
+        <h1>输入管理令牌</h1>
+        <p class="lede">控制台和全部 `/api/*` 接口现在都需要管理令牌。令牌会在服务启动日志中显示。</p>
+        <form id="authForm" class="auth-form">
+          <label>
+            <span class="field-label">管理令牌</span>
+            <input id="adminTokenInput" type="password" autocomplete="off" placeholder="粘贴启动日志中的 management token" required />
+          </label>
+          <div id="authError" class="validation-message">等待登录</div>
+          <button type="submit" class="button-primary full-width">解锁控制台</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="page-shell">
+      <header class="masthead">
+        <div class="masthead-copy">
+          <p class="kicker">Proxy Forge</p>
+          <h1>Clash 订阅控制台</h1>
+          <p class="lede">统一拉取机场订阅、本地 YAML 和脚本逻辑，自动生成受保护的最终订阅。</p>
+        </div>
+        <div class="masthead-actions">
+          <button id="buildButton" class="button-primary">立即构建</button>
+          <a id="subscriptionLink" class="button-secondary" href="#" target="_blank" rel="noreferrer">打开安全订阅</a>
+          <button id="logoutButton" class="button-secondary" type="button">锁定控制台</button>
+        </div>
+      </header>
+
+      <section class="overview-grid">
+        <article class="stat-card accent-teal">
+          <span class="stat-label">启用订阅</span>
+          <strong id="enabledSourcesStat" class="stat-value">0</strong>
+          <span id="healthySourcesStat" class="stat-meta">健康订阅 0</span>
+        </article>
+        <article class="stat-card accent-amber">
+          <span class="stat-label">调度状态</span>
+          <strong id="schedulerStatusStat" class="stat-value">idle</strong>
+          <span id="schedulerMetaStat" class="stat-meta">等待首次运行</span>
+        </article>
+        <article class="stat-card accent-ink">
+          <span class="stat-label">最近构建</span>
+          <strong id="lastBuildStat" class="stat-value">未构建</strong>
+          <span id="buildMetaStat" class="stat-meta">等待输出</span>
+        </article>
+      </section>
+
+      <main class="workspace-grid">
+        <section class="panel command-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Automation</p>
+              <h2>系统控制</h2>
+            </div>
+            <button id="saveSystemButton" class="button-secondary">保存设置</button>
+          </div>
+
+          <div class="control-stack">
+            <label class="toggle-row">
+              <span>自动刷新订阅</span>
+              <input id="autoRefreshEnabled" type="checkbox" checked />
+            </label>
+            <label class="toggle-row">
+              <span>自动构建配置</span>
+              <input id="autoBuildEnabled" type="checkbox" checked />
+            </label>
+            <label>
+              <span class="field-label">刷新间隔（分钟）</span>
+              <input id="refreshIntervalMinutes" type="number" min="1" value="30" />
+            </label>
+          </div>
+
+          <div class="secure-block">
+            <div class="secure-head">
+              <div>
+                <p class="panel-kicker">Protected Feed</p>
+                <h3>安全订阅地址</h3>
+              </div>
+            </div>
+            <div class="action-row">
+              <button id="toggleSubscriptionButton" type="button" class="button-secondary">显示订阅地址</button>
+              <button id="copySubscriptionButton" type="button" class="button-secondary">复制订阅地址</button>
+            </div>
+            <textarea id="subscriptionUrl" class="secure-output hidden" rows="4" readonly></textarea>
+            <button id="rotateTokenButton" type="button" class="button-secondary full-width">轮换订阅令牌</button>
+          </div>
+
+          <div class="raw-config-block">
+            <div class="secure-head compact-head">
+              <div>
+                <p class="panel-kicker">Raw Top Config</p>
+                <h3>顶部配置块</h3>
+              </div>
+              <button id="openRawConfigEditorButton" type="button" class="button-secondary">编辑</button>
+            </div>
+            <label class="toggle-row">
+              <span>启用自定义顶部配置</span>
+              <input id="rawTopConfigEnabled" type="checkbox" />
+            </label>
+            <div id="rawTopConfigPreview" class="editor-preview"></div>
+            <p class="helper-text">这里只允许写 `proxies` 和 `proxy-groups` 之外的顶层 YAML 字段。启用后，这些字段将直接出现在最终 YAML 顶部。</p>
+          </div>
+
+          <div id="systemSummary" class="system-summary"></div>
+        </section>
+
+        <section class="panel source-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Sources</p>
+              <h2>订阅工作区</h2>
+            </div>
+            <button id="reloadSourcesButton" class="button-secondary">刷新列表</button>
+          </div>
+
+          <form id="sourceForm" class="source-form">
+            <div class="form-grid two-col">
+              <label>
+                <span class="field-label">显示名称</span>
+                <input name="name" placeholder="例如：机场 A" required />
+              </label>
+              <label>
+                <span class="field-label">来源类型</span>
+                <select id="sourceType" name="type">
+                  <option value="remote">远程订阅</option>
+                  <option value="local">本地 YAML</option>
+                  <option value="inline">编写 YAML</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-grid">
+              <label id="remoteSourceField">
+                <span class="field-label">远程地址</span>
+                <input name="url" placeholder="https://example.com/clash.yaml" />
+              </label>
+              <label id="localSourceField" class="hidden">
+                <span class="field-label">本地文件路径</span>
+                <input name="filePath" placeholder="G:\code\proxy\tests\fixtures\source-a.yaml" />
+              </label>
+              <label id="inlineSourceField" class="hidden">
+                <span class="field-label">内联 YAML 内容</span>
+                <textarea name="content" rows="4" placeholder="仅 inline 类型使用"></textarea>
+              </label>
+              <label>
+                <span class="field-label">标签</span>
+                <input name="tags" placeholder="airport,hk,main" />
+              </label>
+            </div>
+            <button type="submit" class="button-primary full-width">添加订阅源</button>
+          </form>
+
+          <div id="sourcesList" class="source-list"></div>
+        </section>
+
+        <section class="panel script-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Transform</p>
+              <h2>脚本工作台</h2>
+            </div>
+            <button id="openScriptEditorButton" class="button-secondary">编辑</button>
+          </div>
+          <div id="scriptPreview" class="editor-preview editor-preview-large"></div>
+          <p class="helper-text">脚本接收基础配置对象。启用顶部配置块后，除 `proxies` 和 `proxy-groups` 外的字段都由该配置块决定。</p>
+        </section>
+
+        <section class="panel output-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Output</p>
+              <h2>构建结果</h2>
+            </div>
+            <button id="reloadOutputButton" class="button-secondary">刷新输出</button>
+          </div>
+          <div id="statusBar" class="status-banner">等待操作</div>
+          <div class="output-layout">
+            <div class="build-column">
+              <h3>最近构建</h3>
+              <div id="buildsList" class="build-list"></div>
+            </div>
+            <div class="yaml-column">
+              <div class="yaml-head">
+                <h3>最终 YAML</h3>
+                <span class="yaml-note">构建成功后自动刷新</span>
+              </div>
+              <pre id="outputPreview" class="output-preview"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel output-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Logs</p>
+              <h2>日志中心</h2>
+            </div>
+            <button id="reloadLogsButton" class="button-secondary">刷新日志</button>
+          </div>
+          <div class="log-toolbar">
+            <label>
+              <span class="field-label">日志类型</span>
+              <select id="logTypeSelect">
+                <option value="all">全部</option>
+                <option value="audit">审计日志</option>
+                <option value="app">应用日志</option>
+              </select>
+            </label>
+            <label>
+              <span class="field-label">级别</span>
+              <select id="logLevelSelect">
+                <option value="">全部</option>
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+              </select>
+            </label>
+            <label class="log-search">
+              <span class="field-label">关键词</span>
+              <input id="logSearchInput" placeholder="source.delete / build.failed / error" />
+            </label>
+          </div>
+          <div id="logSummary" class="system-summary"></div>
+          <div id="logsPreview" class="output-preview logs-preview"></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="scriptModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="script"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker">Transform</p>
+            <h2>编辑脚本</h2>
+          </div>
+          <button id="closeScriptModalButton" type="button" class="button-secondary">关闭</button>
+        </div>
+        <div class="code-editor-shell">
+          <pre id="scriptLineNumbers" class="code-line-numbers">1</pre>
+          <textarea id="scriptEditor" class="code-editor modal-editor with-gutter" spellcheck="false"></textarea>
+        </div>
+        <div id="scriptValidationResult" class="validation-message">尚未校验</div>
+        <div class="modal-actions">
+          <button id="resetScriptButton" class="button-secondary" type="button">恢复默认</button>
+          <button id="validateScriptButton" class="button-secondary" type="button">校验脚本</button>
+          <button id="saveScriptButton" class="button-primary">保存脚本</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="rawConfigModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="raw"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker">Raw Top Config</p>
+            <h2>编辑顶部配置块</h2>
+          </div>
+          <button id="closeRawConfigModalButton" type="button" class="button-secondary">关闭</button>
+        </div>
+        <textarea id="rawTopConfigContent" class="code-editor modal-editor" spellcheck="false"></textarea>
+        <div class="modal-actions">
+          <button id="saveRawConfigButton" class="button-primary">应用并关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="sourceContentModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="source-content"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker">Source Content</p>
+            <h2 id="sourceContentTitle">查看订阅原文</h2>
+          </div>
+          <button id="closeSourceContentModalButton" type="button" class="button-secondary">关闭</button>
+        </div>
+        <div id="sourceContentMeta" class="validation-message">等待加载</div>
+        <pre id="sourceContentPreview" class="output-preview source-content-preview"></pre>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+

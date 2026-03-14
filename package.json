@@ -1,0 +1,19 @@
+{
+  "name": "proxy",
+  "version": "1.0.0",
+  "description": "Personal Clash subscription manager",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "build": "node src/cli/build.js",
+    "test": "node scripts/test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}
