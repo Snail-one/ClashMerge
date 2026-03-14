@@ -52,7 +52,7 @@ function createDefaultGroups(proxies) {
 
   return [
     {
-      name: "全部节点",
+      name: "snail",
       type: "select",
       proxies: names,
     },
