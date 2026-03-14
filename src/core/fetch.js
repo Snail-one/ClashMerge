@@ -9,6 +9,7 @@ const { resolveRemoteHostname, validateLocalSourcePath, validateRemoteSourceUrl 
 
 const DEFAULT_FETCH_TIMEOUT_MS = Number(process.env.REMOTE_SOURCE_TIMEOUT_MS || 10000);
 const MAX_REMOTE_SOURCE_BYTES = Number(process.env.MAX_REMOTE_SOURCE_BYTES || 4 * 1024 * 1024);
+const MAX_REMOTE_REDIRECTS = Number(process.env.MAX_REMOTE_REDIRECTS || 5);
 
 function getCacheFilePath(sourceId) {
   return path.join(paths.cacheDir, `${sourceId}.yaml`);
@@ -58,7 +59,7 @@ function readResponseText(response) {
   });
 }
 
-function requestPinnedRemoteText(urlString) {
+function requestPinnedRemoteText(urlString, redirectCount = 0) {
   return new Promise(async (resolve, reject) => {
     let parsedUrl;
     try {
@@ -111,9 +112,33 @@ function requestPinnedRemoteText(urlString) {
       },
       timeout: DEFAULT_FETCH_TIMEOUT_MS,
     }, async response => {
-      if ((response.statusCode || 0) < 200 || (response.statusCode || 0) >= 300) {
+      const statusCode = response.statusCode || 0;
+      if ([301, 302, 303, 307, 308].includes(statusCode)) {
+        const location = response.headers.location;
         response.resume();
-        reject(new Error(`Failed to fetch source: ${response.statusCode} ${response.statusMessage || ""}`.trim()));
+
+        if (!location) {
+          reject(new Error(`Remote source redirect missing location header (${statusCode})`));
+          return;
+        }
+
+        if (redirectCount >= MAX_REMOTE_REDIRECTS) {
+          reject(new Error(`Remote source exceeded redirect limit (${MAX_REMOTE_REDIRECTS})`));
+          return;
+        }
+
+        try {
+          const nextUrl = await validateRemoteSourceUrl(new URL(location, parsedUrl).toString());
+          resolve(await requestPinnedRemoteText(nextUrl, redirectCount + 1));
+        } catch (error) {
+          reject(error);
+        }
+        return;
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        response.resume();
+        reject(new Error(`Failed to fetch source: ${statusCode} ${response.statusMessage || ""}`.trim()));
         return;
       }
 

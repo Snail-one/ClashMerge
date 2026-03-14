@@ -261,6 +261,41 @@ async function testHttpUiAndProtectedSubscription() {
     const unauthorizedSystem = await fetch(`${baseUrl}/api/system/status`);
     assert.equal(unauthorizedSystem.status, 401);
 
+    const createSource = await fetch(`${baseUrl}/api/sources`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Inline Demo",
+        type: "inline",
+        content: "proxies:\n  - name: demo\n    type: ss\n    server: 1.2.3.4\n    port: 443\n    cipher: aes-128-gcm\n    password: secret\n",
+        tags: ["demo"],
+      }),
+    });
+    assert.equal(createSource.status, 201);
+    const createdSource = await createSource.json();
+
+    const updateSource = await fetch(`${baseUrl}/api/sources/${createdSource.id}`, {
+      method: "PUT",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Inline Demo Updated",
+        type: "inline",
+        content: "proxies:\n  - name: demo-updated\n    type: ss\n    server: 5.6.7.8\n    port: 8443\n    cipher: aes-128-gcm\n    password: secret-2\n",
+        tags: ["edited", "inline"],
+      }),
+    });
+    assert.equal(updateSource.status, 200);
+
+    const listSourcesResponse = await fetch(`${baseUrl}/api/sources`, {
+      headers: { "X-Admin-Token": settings.managementToken },
+    });
+    assert.equal(listSourcesResponse.status, 200);
+    const listedSources = await listSourcesResponse.json();
+    const updatedSource = listedSources.find(item => item.id === createdSource.id);
+    assert.equal(updatedSource.name, "Inline Demo Updated");
+    assert.deepEqual(updatedSource.tags, ["edited", "inline"]);
+    assert.match(updatedSource.content, /demo-updated/);
+
     for (let index = 0; index < 5; index += 1) {
       const badLogin = await fetch(`${baseUrl}/api/auth/login`, {
         method: "POST",
