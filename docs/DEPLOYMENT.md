@@ -29,7 +29,6 @@ Windows PowerShell：
 
 ```powershell
 npm.cmd install
-$env:MANAGEMENT_TOKEN="替换成你自己的高强度管理令牌"
 npm.cmd start
 ```
 
@@ -43,9 +42,8 @@ http://127.0.0.1:3000/
 
 1. 克隆或下载项目代码。
 2. 执行 `npm install` 安装依赖。
-3. 通过环境变量设置固定的管理令牌 `MANAGEMENT_TOKEN`。
-4. 执行 `npm start` 启动服务。
-5. 打开管理页面，输入管理令牌登录。
+3. 执行 `npm start` 启动服务，首次启动会自动生成随机管理令牌。
+4. 打开管理页面，输入管理令牌登录。
 
 运行数据会保存在 `data/` 目录下，包括：
 
@@ -60,7 +58,6 @@ http://127.0.0.1:3000/
 ## 五、推荐环境变量
 
 ```text
-MANAGEMENT_TOKEN=你的高强度管理令牌
 HOST=127.0.0.1
 PORT=3000
 PUBLIC_BASE_URL=https://your-domain.example/
@@ -79,6 +76,7 @@ API_RATE_LIMIT_WINDOW_MS=60000
 可选项：
 
 ```text
+MANAGEMENT_TOKEN=你的高强度管理令牌
 ALLOW_PRIVATE_REMOTE_SOURCES=true
 ALLOWED_LOCAL_SOURCE_ROOTS=G:\code\proxy;D:\clash-sources
 ```
@@ -86,6 +84,7 @@ ALLOWED_LOCAL_SOURCE_ROOTS=G:\code\proxy;D:\clash-sources
 说明：
 
 - `MANAGEMENT_TOKEN` 的优先级高于 `data/system.json` 中保存的管理令牌。
+- 默认不设置 `MANAGEMENT_TOKEN` 时，程序会在首次启动时自动生成随机管理令牌并写入 `data/system.json`。
 - `PUBLIC_BASE_URL` 用于生成最终的订阅访问地址。
 - `HOST` 控制服务监听地址；本机部署建议保持 `127.0.0.1`。
 - `MAX_LOG_RETENTION_DAYS` 控制日志保留天数。
@@ -106,7 +105,6 @@ ALLOWED_LOCAL_SOURCE_ROOTS=G:\code\proxy;D:\clash-sources
 
 ```powershell
 npm.cmd install
-$env:MANAGEMENT_TOKEN="替换成你自己的高强度管理令牌"
 $env:PUBLIC_BASE_URL="https://sub.example.com/"
 npm.cmd start
 ```
@@ -121,7 +119,6 @@ npm.cmd start
 
 ```bash
 npm install
-export MANAGEMENT_TOKEN='替换成你自己的高强度管理令牌'
 export PUBLIC_BASE_URL='https://sub.example.com/'
 npm start
 ```
@@ -141,10 +138,13 @@ npm start
 
 ### 1. 修改 `docker-compose.yml`
 
-至少需要修改这两个值：
+建议至少修改这个值：
+
+- `PUBLIC_BASE_URL`
+
+只有在你需要固定管理令牌时，才额外设置：
 
 - `MANAGEMENT_TOKEN`
-- `PUBLIC_BASE_URL`
 
 例如：
 
@@ -152,7 +152,6 @@ npm start
 environment:
   HOST: 0.0.0.0
   PORT: 3000
-  MANAGEMENT_TOKEN: change-this-to-a-long-random-token
   PUBLIC_BASE_URL: https://sub.example.com/
 ```
 
@@ -160,6 +159,7 @@ environment:
 
 - 容器部署时必须把 `HOST` 设为 `0.0.0.0`，否则容器外无法访问服务。
 - `./data:/app/data` 会把运行数据持久化到宿主机当前目录下的 `data/`。
+- 默认不设置 `MANAGEMENT_TOKEN` 时，程序会在首次启动时自动生成随机管理令牌，并在服务日志中输出。
 
 ### 2. 启动容器
 
@@ -225,7 +225,7 @@ docker compose up -d --build
 
 部署前建议确认以下事项：
 
-- 明确设置 `MANAGEMENT_TOKEN`
+- 确认首次启动后已安全保存自动生成的管理令牌，或自行显式设置 `MANAGEMENT_TOKEN`
 - 不要把 `data/` 下的运行数据提交到仓库
 - 如果需要局域网或公网访问，优先通过反向代理暴露
 - 非必要不要开启 `ALLOW_PRIVATE_REMOTE_SOURCES`

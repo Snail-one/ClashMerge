@@ -29,7 +29,6 @@ data/       运行数据目录（已忽略，不进仓库）
 
 ```powershell
 npm.cmd install
-$env:MANAGEMENT_TOKEN="replace-with-a-long-random-token"
 npm.cmd start
 ```
 
@@ -44,6 +43,8 @@ http://127.0.0.1:3000/
 ```bash
 docker compose up -d --build
 ```
+
+首次启动会自动生成随机管理令牌，并输出到服务日志。只有在你明确需要固定管理令牌时，才建议设置 `MANAGEMENT_TOKEN` 环境变量覆盖它。
 
 默认配置见：
 

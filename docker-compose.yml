@@ -10,7 +10,6 @@
     environment:
       HOST: 0.0.0.0
       PORT: 3000
-      MANAGEMENT_TOKEN: change-this-to-a-long-random-token
       PUBLIC_BASE_URL: http://127.0.0.1:3000/
       MAX_BUILD_RECORDS: 10
       MAX_LOG_RETENTION_DAYS: 10
