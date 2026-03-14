@@ -12,7 +12,7 @@ const { refreshSource } = require("../core/refresh");
 const { restartScheduler } = require("../core/scheduler");
 const { readScript, resetScript, writeScript } = require("../core/scripts");
 const { addSource, deleteSource, getSource, listSources, markSourceUpdated, updateSource } = require("../core/sources");
-const { readSystemSettings, rotateSubscriptionToken, sanitizeSystemSettings, updateSystemSettings, validateRawTopConfig } = require("../core/system");
+const { getManagementTokenSource, readSystemSettings, rotateSubscriptionToken, sanitizeSystemSettings, updateSystemSettings, validateRawTopConfig } = require("../core/system");
 const { runTransformContent } = require("../core/transform");
 const { fileExists } = require("../utils/fs");
 const { createHttpError, readJson, sendJson, sendText } = require("../utils/http");
@@ -95,6 +95,14 @@ async function isAuthorized(req, safeEqual) {
 
 function sendUnauthorized(res) {
   sendJson(res, 401, { error: "Unauthorized" });
+}
+
+function sendManagementTokenHint(res) {
+  sendJson(res, 401, {
+    error: getManagementTokenSource() === "env"
+      ? "管理令牌无效。当前服务正在使用 MANAGEMENT_TOKEN 环境变量，data/system.json 中的 managementToken 不会生效。"
+      : "管理令牌无效。请确认你填写的是 data/system.json 中的 managementToken。",
+  });
 }
 
 function getAttemptEntry(store, key, windowMs) {
@@ -201,7 +209,8 @@ async function handleRequest(req, res, appContext = {}) {
           action: "auth.login.failed",
           outcome: "deny",
         });
-        sendUnauthorized(res);
+        sendManagementTokenHint(res);
+
         return;
       }
 
@@ -226,7 +235,8 @@ async function handleRequest(req, res, appContext = {}) {
           action: "api.unauthorized",
           outcome: "deny",
         });
-        sendUnauthorized(res);
+        sendManagementTokenHint(res);
+
         return;
       }
     }
@@ -526,3 +536,5 @@ async function handleRequest(req, res, appContext = {}) {
 module.exports = {
   handleRequest,
 };
+
+

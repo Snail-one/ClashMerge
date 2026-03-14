@@ -171,6 +171,10 @@ async function pruneLogs() {
 
   remainingFiles.sort((left, right) => left.mtimeMs - right.mtimeMs || left.filePath.localeCompare(right.filePath));
   let totalBytes = remainingFiles.reduce((sum, item) => sum + item.size, 0);
+  const remainingTypeCounts = remainingFiles.reduce((counts, item) => {
+    counts[item.type] = (counts[item.type] || 0) + 1;
+    return counts;
+  }, {});
 
   for (const file of remainingFiles) {
     if (totalBytes <= MAX_TOTAL_LOG_BYTES) {
@@ -178,9 +182,10 @@ async function pruneLogs() {
     }
 
     const bytesNeeded = totalBytes - MAX_TOTAL_LOG_BYTES;
-    if (file.size <= bytesNeeded || remainingFiles.length > 1) {
+    if (file.size <= bytesNeeded && remainingTypeCounts[file.type] > 1) {
       await fs.rm(file.filePath, { force: true });
       totalBytes -= file.size;
+      remainingTypeCounts[file.type] -= 1;
       continue;
     }
 
@@ -342,5 +347,6 @@ module.exports = {
   trimAllLogFiles: pruneLogs,
   writeAppLog,
 };
+
 
 

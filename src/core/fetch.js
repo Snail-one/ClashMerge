@@ -1,6 +1,7 @@
 ﻿const fs = require("node:fs/promises");
 const http = require("node:http");
 const https = require("node:https");
+const net = require("node:net");
 const path = require("node:path");
 
 const { paths } = require("../config/paths");
@@ -76,6 +77,17 @@ function requestPinnedRemoteText(urlString) {
     }
 
     const [selected] = resolvedAddresses;
+    if (!selected || !selected.address) {
+      reject(new Error("Unable to resolve remote source host"));
+      return;
+    }
+
+    const selectedFamily = Number(selected.family) || net.isIP(selected.address);
+    if (![4, 6].includes(selectedFamily)) {
+      reject(new Error(`Invalid resolved IP address: ${selected.address}`));
+      return;
+    }
+
     const client = parsedUrl.protocol === "https:" ? https : http;
     const request = client.request({
       protocol: parsedUrl.protocol,
@@ -90,7 +102,12 @@ function requestPinnedRemoteText(urlString) {
       },
       servername: parsedUrl.hostname,
       lookup(hostname, options, callback) {
-        callback(null, selected.address, selected.family);
+        const done = typeof options === "function" ? options : callback;
+        if (options && typeof options === "object" && options.all === true) {
+          done(null, [{ address: selected.address, family: selectedFamily }]);
+          return;
+        }
+        done(null, selected.address, selectedFamily);
       },
       timeout: DEFAULT_FETCH_TIMEOUT_MS,
     }, async response => {

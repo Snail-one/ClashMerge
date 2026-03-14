@@ -210,6 +210,8 @@ async function testEnvironmentManagementTokenPriority() {
         body: JSON.stringify({ token: fileToken }),
       });
       assert.equal(loginWithFileToken.status, 401);
+      const loginWithFileTokenPayload = await loginWithFileToken.json();
+      assert.match(loginWithFileTokenPayload.error, /MANAGEMENT_TOKEN/);
 
       const loginWithEnvToken = await fetch(`${baseUrl}/api/auth/login`, {
         method: "POST",
@@ -252,6 +254,8 @@ async function testHttpUiAndProtectedSubscription() {
     assert.equal(home.status, 200);
     assert.match(homeText, /Clash 订阅控制台/);
     assert.match(homeText, /输入管理令牌/);
+    assert.match(homeText, /inline-demo/);
+    assert.doesNotMatch(homeText, /本地 YAML/);
     assert.match(home.headers.get("content-security-policy"), /default-src 'self'/);
 
     const unauthorizedSystem = await fetch(`${baseUrl}/api/system/status`);
@@ -443,5 +447,8 @@ main().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
+
+
+
 
 

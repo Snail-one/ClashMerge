@@ -9,6 +9,10 @@ function getEnvironmentManagementToken() {
   return String(process.env.MANAGEMENT_TOKEN || "").trim();
 }
 
+function getManagementTokenSource() {
+  return getEnvironmentManagementToken() ? "env" : "file";
+}
+
 function applyEnvironmentOverrides(settings) {
   const managementToken = getEnvironmentManagementToken();
 
@@ -96,6 +100,7 @@ function sanitizeSystemSettings(settings) {
 }
 
 module.exports = {
+  getManagementTokenSource,
   getEnvironmentManagementToken,
   readPersistedSystemSettings,
   readSystemSettings,

@@ -1,4 +1,5 @@
 ﻿const storageKey = "proxy-manager-admin-token";
+const themeStorageKey = "proxy-manager-theme";
 let toastTimerSeed = 0;
 
 const state = {
@@ -9,11 +10,18 @@ const state = {
   logSummary: null,
   system: null,
   subscriptionVisible: false,
+  activeSection: "overview",
+  sidebarOpen: false,
   adminToken: window.sessionStorage.getItem(storageKey) || "",
+  theme: window.localStorage.getItem(themeStorageKey) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
 };
 
 const elements = {
   toastStack: document.querySelector("#toastStack"),
+  dashboardShell: document.querySelector(".dashboard-shell"),
+  moduleSidebar: document.querySelector("#moduleSidebar"),
+  sidebarToggleButton: document.querySelector("#sidebarToggleButton"),
+  themeToggleButton: document.querySelector("#themeToggleButton"),
   authGate: document.querySelector("#authGate"),
   authForm: document.querySelector("#authForm"),
   adminTokenInput: document.querySelector("#adminTokenInput"),
@@ -22,8 +30,8 @@ const elements = {
   sourceForm: document.querySelector("#sourceForm"),
   sourceType: document.querySelector("#sourceType"),
   remoteSourceField: document.querySelector("#remoteSourceField"),
-  localSourceField: document.querySelector("#localSourceField"),
   inlineSourceField: document.querySelector("#inlineSourceField"),
+  inlineSourceHint: document.querySelector("#inlineSourceHint"),
   sourcesList: document.querySelector("#sourcesList"),
   scriptEditor: document.querySelector("#scriptEditor"),
   scriptLineNumbers: document.querySelector("#scriptLineNumbers"),
@@ -75,6 +83,8 @@ const elements = {
   schedulerMetaStat: document.querySelector("#schedulerMetaStat"),
   lastBuildStat: document.querySelector("#lastBuildStat"),
   buildMetaStat: document.querySelector("#buildMetaStat"),
+  sidebarLinks: Array.from(document.querySelectorAll("[data-section-target]")),
+  modulePanels: Array.from(document.querySelectorAll(".module-panel[data-section]")),
 };
 
 function setAdminToken(token) {
@@ -84,6 +94,17 @@ function setAdminToken(token) {
   } else {
     window.sessionStorage.removeItem(storageKey);
   }
+}
+
+function applyTheme(theme, options = {}) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  state.theme = nextTheme;
+  document.documentElement.dataset.theme = nextTheme;
+  if (options.persist !== false) {
+    window.localStorage.setItem(themeStorageKey, nextTheme);
+  }
+  elements.themeToggleButton.textContent = nextTheme === "dark" ? "浅色模式" : "暗黑模式";
+  elements.themeToggleButton.setAttribute("aria-pressed", nextTheme === "dark" ? "true" : "false");
 }
 
 function showToast(message, tone = "neutral") {
@@ -172,9 +193,10 @@ function setValidationResult(message, tone = "neutral") {
 
 function updateSourceFormVisibility() {
   const type = elements.sourceType.value;
-  elements.remoteSourceField.classList.toggle("hidden", type !== "remote");
-  elements.localSourceField.classList.toggle("hidden", type !== "local");
-  elements.inlineSourceField.classList.toggle("hidden", type !== "inline");
+  const isInline = type === "inline";
+  elements.remoteSourceField.classList.toggle("hidden", isInline);
+  elements.inlineSourceField.classList.toggle("hidden", !isInline);
+  elements.inlineSourceHint.classList.toggle("hidden", !isInline);
 }
 
 function updateScriptLineNumbers() {
@@ -199,7 +221,6 @@ function previewText(value, fallback = "点击按钮开始编辑") {
 
 function getSourceLocationText(source) {
   if (source.type === "remote") return "远程订阅地址已隐藏";
-  if (source.type === "local") return source.filePath || "本地 YAML 文件";
   if (source.type === "inline") return "内联 YAML 内容";
   return source.url || source.filePath || "inline content";
 }
@@ -235,6 +256,37 @@ function openModal(modal) {
 function closeModal(modal) {
   modal.classList.add("hidden");
   modal.setAttribute("aria-hidden", "true");
+}
+
+function setSidebarOpen(open) {
+  state.sidebarOpen = open;
+  elements.dashboardShell.classList.toggle("sidebar-open", open);
+  elements.sidebarToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function setActiveSection(sectionId) {
+  state.activeSection = sectionId;
+  elements.sidebarLinks.forEach(button => {
+    const active = button.dataset.sectionTarget === sectionId;
+    button.classList.toggle("active", active);
+  });
+  elements.modulePanels.forEach(panel => {
+    panel.classList.toggle("active", panel.dataset.section === sectionId);
+  });
+  if (window.innerWidth <= 900) {
+    setSidebarOpen(false);
+  }
+}
+
+function renderNavigation() {
+  elements.sidebarLinks.forEach(button => {
+    button.classList.toggle("active", button.dataset.sectionTarget === state.activeSection);
+  });
+  elements.modulePanels.forEach(panel => {
+    panel.classList.toggle("active", panel.dataset.section === state.activeSection);
+  });
+  elements.dashboardShell.classList.toggle("sidebar-open", state.sidebarOpen && window.innerWidth <= 900);
+  elements.sidebarToggleButton.setAttribute("aria-expanded", state.sidebarOpen && window.innerWidth <= 900 ? "true" : "false");
 }
 
 function renderOverview() {
@@ -497,6 +549,7 @@ async function loadLogs() {
 
 async function bootstrap() {
   updateSourceFormVisibility();
+  renderNavigation();
 
   if (!state.adminToken) {
     showAuthGate();
@@ -507,6 +560,7 @@ async function bootstrap() {
   hideAuthGate();
   setStatus("正在加载控制台...");
   await Promise.all([loadSystem(), loadSources(), loadScript(), loadBuilds(), loadOutput(), loadLogs()]);
+  renderNavigation();
   setStatus("控制台已就绪");
 }
 
@@ -527,6 +581,7 @@ async function handleAuthSubmit(event) {
   state.system = result;
   hideAuthGate();
   await Promise.all([loadSources(), loadScript(), loadBuilds(), loadOutput(), loadLogs()]);
+  renderNavigation();
   renderSystem();
   setStatus("控制台已解锁");
   showToast("控制台已解锁", "ok");
@@ -534,6 +589,7 @@ async function handleAuthSubmit(event) {
 
 function handleLogout() {
   setAdminToken("");
+  setSidebarOpen(false);
   showAuthGate("控制台已锁定，请重新输入管理令牌。");
   setStatus("控制台已锁定");
   showToast("控制台已锁定", "warn");
@@ -754,6 +810,30 @@ document.addEventListener("click", event => {
   if (closeType === "source-content") closeModal(elements.sourceContentModal);
 });
 
+elements.sidebarToggleButton.addEventListener("click", () => {
+  setSidebarOpen(!state.sidebarOpen);
+  renderNavigation();
+});
+
+elements.themeToggleButton.addEventListener("click", () => {
+  applyTheme(state.theme === "dark" ? "light" : "dark");
+  showToast(state.theme === "dark" ? "已切换到暗黑模式" : "已切换到浅色模式", "ok");
+});
+
+elements.moduleSidebar.addEventListener("click", event => {
+  const button = event.target.closest("[data-section-target]");
+  if (!button) return;
+  setActiveSection(button.dataset.sectionTarget);
+  renderNavigation();
+});
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 900) {
+    state.sidebarOpen = false;
+  }
+  renderNavigation();
+});
+
 elements.authForm.addEventListener("submit", event => { handleAuthSubmit(event).catch(error => {
   elements.authError.textContent = `登录失败：${error.message}`;
   elements.authError.dataset.tone = "error";
@@ -761,20 +841,20 @@ elements.authForm.addEventListener("submit", event => { handleAuthSubmit(event).
 }); });
 elements.logoutButton.addEventListener("click", handleLogout);
 elements.sourceType.addEventListener("change", updateSourceFormVisibility);
-elements.sourceForm.addEventListener("submit", event => { handleAddSource(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.sourcesList.addEventListener("click", event => { handleSourceAction(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.buildButton.addEventListener("click", () => { handleBuild().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.saveSystemButton.addEventListener("click", () => { handleSaveSystem().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.rotateTokenButton.addEventListener("click", () => { handleRotateToken().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.toggleSubscriptionButton.addEventListener("click", handleToggleSubscription);
-elements.copySubscriptionButton.addEventListener("click", () => { handleCopySubscription().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.reloadSourcesButton.addEventListener("click", () => { Promise.all([loadSystem(), loadSources()]).then(() => { setStatus("订阅源列表已刷新"); showToast("订阅源列表已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.reloadOutputButton.addEventListener("click", () => { Promise.all([loadSystem(), loadBuilds(), loadOutput()]).then(() => { setStatus("输出信息已刷新"); showToast("输出信息已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.reloadLogsButton.addEventListener("click", () => { loadLogs().then(() => { setStatus("日志已刷新"); showToast("日志已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.logTypeSelect.addEventListener("change", () => { loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.logLevelSelect.addEventListener("change", () => { loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.logSearchInput.addEventListener("change", () => { loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.openScriptEditorButton.addEventListener("click", () => { handleOpenScriptEditor().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.sourceForm.addEventListener("submit", event => { setActiveSection("sources"); handleAddSource(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.sourcesList.addEventListener("click", event => { setActiveSection("sources"); handleSourceAction(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.buildButton.addEventListener("click", () => { setActiveSection("builds"); handleBuild().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.saveSystemButton.addEventListener("click", () => { setActiveSection("settings"); handleSaveSystem().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.rotateTokenButton.addEventListener("click", () => { setActiveSection("overview"); handleRotateToken().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.toggleSubscriptionButton.addEventListener("click", () => { setActiveSection("overview"); handleToggleSubscription(); });
+elements.copySubscriptionButton.addEventListener("click", () => { setActiveSection("overview"); handleCopySubscription().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.reloadSourcesButton.addEventListener("click", () => { setActiveSection("sources"); Promise.all([loadSystem(), loadSources()]).then(() => { setStatus("订阅源列表已刷新"); showToast("订阅源列表已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.reloadOutputButton.addEventListener("click", () => { setActiveSection("builds"); Promise.all([loadSystem(), loadBuilds(), loadOutput()]).then(() => { setStatus("输出信息已刷新"); showToast("输出信息已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.reloadLogsButton.addEventListener("click", () => { setActiveSection("logs"); loadLogs().then(() => { setStatus("日志已刷新"); showToast("日志已刷新", "ok"); }).catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.logTypeSelect.addEventListener("change", () => { setActiveSection("logs"); loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.logLevelSelect.addEventListener("change", () => { setActiveSection("logs"); loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.logSearchInput.addEventListener("change", () => { setActiveSection("logs"); loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.openScriptEditorButton.addEventListener("click", () => { setActiveSection("transform"); handleOpenScriptEditor().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.closeScriptModalButton.addEventListener("click", () => closeModal(elements.scriptModal));
 elements.closeSourceContentModalButton.addEventListener("click", () => closeModal(elements.sourceContentModal));
 elements.scriptEditor.addEventListener("input", () => {
@@ -782,14 +862,25 @@ elements.scriptEditor.addEventListener("input", () => {
   setValidationResult("脚本已修改，保存时会自动校验。", "warn");
 });
 elements.scriptEditor.addEventListener("scroll", updateScriptLineNumbers);
-elements.resetScriptButton.addEventListener("click", () => { handleResetScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.validateScriptButton.addEventListener("click", () => { handleValidateScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.saveScriptButton.addEventListener("click", () => { handleSaveScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.openRawConfigEditorButton.addEventListener("click", () => openModal(elements.rawConfigModal));
+elements.resetScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleResetScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.validateScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleValidateScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.saveScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleSaveScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.openRawConfigEditorButton.addEventListener("click", () => { setActiveSection("settings"); openModal(elements.rawConfigModal); });
 elements.closeRawConfigModalButton.addEventListener("click", () => closeModal(elements.rawConfigModal));
-elements.saveRawConfigButton.addEventListener("click", () => { handleSaveRawConfig().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.saveRawConfigButton.addEventListener("click", () => { setActiveSection("settings"); handleSaveRawConfig().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 
+applyTheme(state.theme, { persist: false });
 bootstrap().catch(error => { setStatus(error.message); showErrorToast(error); });
+
+
+
+
+
+
+
+
+
+
 
 
 
