@@ -6,10 +6,10 @@
     container_name: proxy-manager
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "33333:3000"
     environment:
       HOST: 0.0.0.0
-      PORT: 33333
+      PORT: 3000
       MANAGEMENT_TOKEN: change-this-to-a-long-random-token
       PUBLIC_BASE_URL: http://127.0.0.1:3000/
       MAX_BUILD_RECORDS: 10
