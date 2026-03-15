@@ -1,5 +1,6 @@
 const storageKey = "proxy-manager-admin-token";
 const themeStorageKey = "proxy-manager-theme";
+const sectionStorageKey = "proxy-manager-active-section";
 let toastTimerSeed = 0;
 
 const state = {
@@ -10,11 +11,12 @@ const state = {
   logSummary: null,
   system: null,
   subscriptionVisible: false,
-  activeSection: "overview",
+  activeSection: window.localStorage.getItem(sectionStorageKey) || "overview",
   sidebarOpen: false,
   adminToken: window.sessionStorage.getItem(storageKey) || "",
   theme: window.localStorage.getItem(themeStorageKey) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   editingSourceId: null,
+  textEditorContext: null,
 };
 
 const elements = {
@@ -35,10 +37,13 @@ const elements = {
   remoteSourceField: document.querySelector("#remoteSourceField"),
   inlineSourceField: document.querySelector("#inlineSourceField"),
   inlineSourceHint: document.querySelector("#inlineSourceHint"),
+  inlineSourcePreview: document.querySelector("#inlineSourcePreview"),
+  openInlineSourceEditorButton: document.querySelector("#openInlineSourceEditorButton"),
   sourcesList: document.querySelector("#sourcesList"),
   scriptEditor: document.querySelector("#scriptEditor"),
   scriptLineNumbers: document.querySelector("#scriptLineNumbers"),
   rawTopConfigContent: document.querySelector("#rawTopConfigContent"),
+  openRawConfigEditorButton: document.querySelector("#openRawConfigEditorButton"),
   scriptPreview: document.querySelector("#scriptPreview"),
   rawTopConfigPreview: document.querySelector("#rawTopConfigPreview"),
   outputPreview: document.querySelector("#outputPreview"),
@@ -61,12 +66,14 @@ const elements = {
   rotateTokenButton: document.querySelector("#rotateTokenButton"),
   toggleSubscriptionButton: document.querySelector("#toggleSubscriptionButton"),
   copySubscriptionButton: document.querySelector("#copySubscriptionButton"),
-  openRawConfigEditorButton: document.querySelector("#openRawConfigEditorButton"),
   closeScriptModalButton: document.querySelector("#closeScriptModalButton"),
-  closeRawConfigModalButton: document.querySelector("#closeRawConfigModalButton"),
+  closeTextEditorModalButton: document.querySelector("#closeTextEditorModalButton"),
   scriptModal: document.querySelector("#scriptModal"),
-  rawConfigModal: document.querySelector("#rawConfigModal"),
+  textEditorModal: document.querySelector("#textEditorModal"),
   sourceContentModal: document.querySelector("#sourceContentModal"),
+  textEditorModalTitle: document.querySelector("#textEditorModalTitle"),
+  textEditorModalInput: document.querySelector("#textEditorModalInput"),
+  applyTextEditorModalButton: document.querySelector("#applyTextEditorModalButton"),
   closeSourceContentModalButton: document.querySelector("#closeSourceContentModalButton"),
   sourceContentTitle: document.querySelector("#sourceContentTitle"),
   sourceContentMeta: document.querySelector("#sourceContentMeta"),
@@ -99,6 +106,18 @@ function setAdminToken(token) {
   }
 }
 
+function persistActiveSection(sectionId) {
+  const nextSection = String(sectionId || "overview");
+  window.localStorage.setItem(sectionStorageKey, nextSection);
+}
+
+function getInitialActiveSection() {
+  const availableSections = new Set(elements.modulePanels.map(panel => panel.dataset.section).filter(Boolean));
+  if (availableSections.has(state.activeSection)) {
+    return state.activeSection;
+  }
+  return "overview";
+}
 function applyTheme(theme, options = {}) {
   const nextTheme = theme === "dark" ? "dark" : "light";
   state.theme = nextTheme;
@@ -132,6 +151,14 @@ function showToast(message, tone = "neutral") {
 
   toast.addEventListener("click", dismiss, { once: true });
   setTimeout(dismiss, tone === "error" ? 5000 : 3200);
+}
+
+function releaseThemePreload() {
+  document.documentElement.classList.remove("theme-preload");
+  document.documentElement.style.removeProperty("background-color");
+  document.documentElement.style.removeProperty("color");
+  document.body.style.removeProperty("background-color");
+  document.body.style.removeProperty("color");
 }
 
 function showErrorToast(error) {
@@ -189,6 +216,41 @@ function setStatus(message) {
   elements.statusBar.textContent = message;
 }
 
+function syncInlineSourcePreview() {
+  elements.inlineSourcePreview.textContent = previewText(elements.sourceForm.elements.content.value, "点击下方按钮开始编辑");
+}
+
+function syncRawTopConfigPreview() {
+  elements.rawTopConfigPreview.textContent = previewText(elements.rawTopConfigContent.value, "顶部配置块未设置");
+}
+
+function openTextEditorModal(context) {
+  state.textEditorContext = context;
+  elements.textEditorModalTitle.textContent = context.title;
+  elements.textEditorModalInput.value = context.value || "";
+  openModal(elements.textEditorModal);
+}
+
+function applyTextEditorModal() {
+  if (!state.textEditorContext) {
+    closeModal(elements.textEditorModal);
+    return;
+  }
+
+  const value = elements.textEditorModalInput.value;
+  if (state.textEditorContext.target === "inline-source") {
+    elements.sourceForm.elements.content.value = value;
+    syncInlineSourcePreview();
+  }
+
+  if (state.textEditorContext.target === "raw-top-config") {
+    elements.rawTopConfigContent.value = value;
+    syncRawTopConfigPreview();
+  }
+
+  closeModal(elements.textEditorModal);
+  state.textEditorContext = null;
+}
 function setValidationResult(message, tone = "neutral") {
   elements.scriptValidationResult.textContent = message;
   elements.scriptValidationResult.dataset.tone = tone;
@@ -201,6 +263,7 @@ function resetSourceForm() {
   updateSourceFormVisibility();
   elements.sourceSubmitButton.textContent = "添加订阅源";
   elements.sourceCancelEditButton.classList.add("hidden");
+  syncInlineSourcePreview();
 }
 
 function startSourceEdit(source) {
@@ -299,6 +362,7 @@ function setSidebarOpen(open) {
 
 function setActiveSection(sectionId) {
   state.activeSection = sectionId;
+  persistActiveSection(sectionId);
   elements.sidebarLinks.forEach(button => {
     const active = button.dataset.sectionTarget === sectionId;
     button.classList.toggle("active", active);
@@ -404,20 +468,44 @@ function renderSources() {
         : '<span class="badge">未刷新</span>';
 
     return `
-      <article class="source-card">
-        <div><strong>${escapeHtml(source.name)}</strong></div>
-        <div class="source-meta">${escapeHtml(source.type)} · ${source.enabled ? "启用" : "禁用"} · ${source.lastBuildIncluded ? "已参与最近构建" : "未参与最近构建"}${source.useAsTemplate ? " · 结构模板" : ""}</div>
-        <div class="source-meta">默认规则模板：${source.useAsTemplate ? "是（当前默认）" : "否"}</div>
-        <div class="source-meta">${escapeHtml(getSourceLocationText(source))}</div>
-        <div>${refreshBadge}${(source.tags || []).map(tag => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
-        <div class="source-meta">最近刷新：${escapeHtml(formatDate(source.lastRefreshAt))}${source.lastRefreshError ? ` · 错误：${escapeHtml(source.lastRefreshError)}` : ""}</div>
-        <div class="inline-actions">
-          <button class="button-secondary" data-action="toggle" data-id="${source.id}">${source.enabled ? "禁用" : "启用"}</button>
-          <button class="button-secondary" data-action="template" data-id="${source.id}">${source.useAsTemplate ? "取消模板" : "设为模板"}</button>
-          <button class="button-secondary" data-action="edit" data-id="${source.id}">编辑</button>
+      <article class="source-card compact-source-card">
+        <div class="source-card-head">
+          <div class="source-title-stack">
+            <strong>${escapeHtml(source.name)}</strong>
+            <div class="source-meta">${escapeHtml(source.type)} · ${source.enabled ? "启用" : "禁用"}${source.useAsTemplate ? " · 结构模板" : ""}</div>
+          </div>
+          <div class="source-badges source-badges-tight">${refreshBadge}${(source.tags || []).map(tag => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
+        </div>
+        <div class="source-summary-grid">
+          <div class="source-summary-item">
+            <span class="source-summary-label">构建状态</span>
+            <strong>${source.lastBuildIncluded ? "已参与最近构建" : "未参与最近构建"}</strong>
+          </div>
+          <div class="source-summary-item">
+            <span class="source-summary-label">规则模板</span>
+            <strong>${source.useAsTemplate ? "当前默认" : "未启用"}</strong>
+          </div>
+          <div class="source-summary-item">
+            <span class="source-summary-label">来源位置</span>
+            <strong>${escapeHtml(getSourceLocationText(source))}</strong>
+          </div>
+          <div class="source-summary-item ${source.lastRefreshError ? "source-error" : ""}">
+            <span class="source-summary-label">最近刷新</span>
+            <strong>${escapeHtml(formatDate(source.lastRefreshAt))}${source.lastRefreshError ? ` · ${escapeHtml(source.lastRefreshError)}` : ""}</strong>
+          </div>
+        </div>
+        <div class="inline-actions compact-source-actions">
           <button class="button-secondary" data-action="refresh" data-id="${source.id}">刷新</button>
-          <button class="button-secondary" data-action="content" data-id="${source.id}">查看原文</button>
-          <button class="button-secondary" data-action="delete" data-id="${source.id}">删除</button>
+          <button class="button-secondary" data-action="edit" data-id="${source.id}">编辑</button>
+          <details class="source-actions-menu">
+            <summary class="button-secondary">更多</summary>
+            <div class="source-actions-dropdown">
+              <button class="button-secondary" data-action="toggle" data-id="${source.id}">${source.enabled ? "禁用" : "启用"}</button>
+              <button class="button-secondary" data-action="template" data-id="${source.id}">${source.useAsTemplate ? "取消模板" : "设为模板"}</button>
+              <button class="button-secondary" data-action="content" data-id="${source.id}">查看原文</button>
+              <button class="button-secondary danger" data-action="delete" data-id="${source.id}">删除</button>
+            </div>
+          </details>
         </div>
       </article>
     `;
@@ -620,7 +708,10 @@ async function loadLogs() {
 }
 
 async function bootstrap() {
+  state.activeSection = getInitialActiveSection();
+  persistActiveSection(state.activeSection);
   updateSourceFormVisibility();
+  syncInlineSourcePreview();
   renderNavigation();
 
   if (!state.adminToken) {
@@ -832,10 +923,9 @@ async function handleSaveScript() {
 
 async function handleSaveRawConfig() {
   setStatus("正在保存顶部配置块并重建输出...");
-  elements.rawTopConfigPreview.textContent = previewText(elements.rawTopConfigContent.value, "顶部配置块未设置");
+  syncRawTopConfigPreview();
   await handleSaveSystem({ rebuildOutput: true, skipToast: true });
   await Promise.all([loadSystem(), loadSources(), loadBuilds(), loadOutput(), loadLogs()]);
-  closeModal(elements.rawConfigModal);
   setStatus("顶部配置块已保存，输出已重建");
   showToast("顶部配置块已保存，输出已重建", "ok");
 }
@@ -892,11 +982,22 @@ function handleToggleSubscription() {
   renderSystem();
 }
 
+function closeSourceActionMenus(exceptMenu = null) {
+  document.querySelectorAll(".source-actions-menu[open]").forEach(menu => {
+    if (menu !== exceptMenu) {
+      menu.removeAttribute("open");
+    }
+  });
+}
+
 document.addEventListener("click", event => {
   const closeType = event.target.getAttribute("data-close-modal");
   if (closeType === "script") closeModal(elements.scriptModal);
-  if (closeType === "raw") closeModal(elements.rawConfigModal);
+  if (closeType === "text-editor") closeModal(elements.textEditorModal);
   if (closeType === "source-content") closeModal(elements.sourceContentModal);
+
+  const actionMenu = event.target.closest(".source-actions-menu");
+  closeSourceActionMenus(actionMenu);
 });
 
 elements.sidebarToggleButton.addEventListener("click", () => {
@@ -945,7 +1046,24 @@ elements.logTypeSelect.addEventListener("change", () => { setActiveSection("logs
 elements.logLevelSelect.addEventListener("change", () => { setActiveSection("logs"); loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.logSearchInput.addEventListener("change", () => { setActiveSection("logs"); loadLogs().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.openScriptEditorButton.addEventListener("click", () => { setActiveSection("transform"); handleOpenScriptEditor().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.openInlineSourceEditorButton.addEventListener("click", () => {
+  openTextEditorModal({
+    target: "inline-source",
+    title: "编辑内联 YAML 内容",
+    value: elements.sourceForm.elements.content.value,
+  });
+});
+elements.openRawConfigEditorButton.addEventListener("click", () => {
+  setActiveSection("transform");
+  openTextEditorModal({
+    target: "raw-top-config",
+    title: "编辑顶部配置块",
+    value: elements.rawTopConfigContent.value,
+  });
+});
 elements.closeScriptModalButton.addEventListener("click", () => closeModal(elements.scriptModal));
+elements.closeTextEditorModalButton.addEventListener("click", () => closeModal(elements.textEditorModal));
+elements.applyTextEditorModalButton.addEventListener("click", applyTextEditorModal);
 elements.closeSourceContentModalButton.addEventListener("click", () => closeModal(elements.sourceContentModal));
 elements.scriptEditor.addEventListener("input", () => {
   updateScriptLineNumbers();
@@ -955,11 +1073,10 @@ elements.scriptEditor.addEventListener("scroll", updateScriptLineNumbers);
 elements.resetScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleResetScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.validateScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleValidateScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.saveScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleSaveScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
-elements.openRawConfigEditorButton.addEventListener("click", () => { setActiveSection("settings"); openModal(elements.rawConfigModal); });
-elements.closeRawConfigModalButton.addEventListener("click", () => closeModal(elements.rawConfigModal));
-elements.saveRawConfigButton.addEventListener("click", () => { setActiveSection("settings"); handleSaveRawConfig().catch(error => { setStatus(error.message); showErrorToast(error); }); });
+elements.saveRawConfigButton.addEventListener("click", () => { setActiveSection("transform"); handleSaveRawConfig().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 
 applyTheme(state.theme, { persist: false });
+releaseThemePreload();
 bootstrap().catch(error => { setStatus(error.message); showErrorToast(error); });
 
 

@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Clash Subscription Manager</title>
+    <script>
+      (() => {
+        const themeStorageKey = "proxy-manager-theme";
+        const storedTheme = window.localStorage.getItem(themeStorageKey);
+        const theme = storedTheme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        const isDark = theme === "dark";
+        const bg = isDark ? "#111418" : "#f8f9fa";
+        const ink = isDark ? "#e8eaed" : "#202124";
+        document.documentElement.dataset.theme = isDark ? "dark" : "light";
+        document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+        document.documentElement.style.backgroundColor = bg;
+        document.documentElement.style.color = ink;
+        document.documentElement.classList.add("theme-preload");
+        document.addEventListener("DOMContentLoaded", () => {
+          document.body.style.backgroundColor = bg;
+          document.body.style.color = ink;
+        }, { once: true });
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -169,7 +188,11 @@
                     </label>
                     <label id="inlineSourceField" class="hidden">
                       <span class="field-label">内联 YAML 内容</span>
-                      <textarea name="content" rows="8" placeholder="proxies:
+                      <div class="embedded-editor-card">
+                        <div id="inlineSourcePreview" class="editor-preview source-inline-preview">点击下方按钮开始编辑</div>
+                        <button id="openInlineSourceEditorButton" type="button" class="button-secondary">弹出编辑</button>
+                      </div>
+                      <textarea id="inlineSourceContent" name="content" class="hidden" rows="8" placeholder="proxies:
   - name: inline-demo
     type: ss
     server: 1.2.3.4
@@ -210,12 +233,39 @@
                 <p class="panel-kicker">Transform</p>
                 <h2>脚本工作台</h2>
               </div>
-              <button id="openScriptEditorButton" class="button-secondary">编辑</button>
             </div>
-            <section class="panel script-panel">
-              <div id="scriptPreview" class="editor-preview editor-preview-large"></div>
-              <p class="helper-text">脚本接收基础配置对象。启用顶部配置块后，除 `proxies` 和 `proxy-groups` 外的字段都由该配置块决定。</p>
-            </section>
+            <div class="module-grid transform-workbench">
+              <section class="panel raw-config-panel">
+                <div class="panel-header raw-config-head">
+                  <div>
+                    <p class="panel-kicker">Step 1</p>
+                    <h3>顶部配置块</h3>
+                  </div>
+                  <button id="saveRawConfigButton" type="button" class="button-primary">保存并重建</button>
+                </div>
+                <label class="toggle-row">
+                  <span>启用顶部配置块</span>
+                  <input id="rawTopConfigEnabled" type="checkbox" />
+                </label>
+                <div class="embedded-editor-card">
+                  <div id="rawTopConfigPreview" class="editor-preview raw-config-mirror">顶部配置块未设置</div>
+                  <button id="openRawConfigEditorButton" type="button" class="button-secondary">弹出编辑</button>
+                </div>
+                <textarea id="rawTopConfigContent" class="hidden" rows="16" spellcheck="false"></textarea>
+                <p class="helper-text">处理流程会先注入顶部配置块，再进入转换脚本。这里只允许写 `proxies` 和 `proxy-groups` 之外的顶层 YAML 字段。</p>
+              </section>
+              <section class="panel script-panel">
+                <div class="panel-header">
+                  <div>
+                    <p class="panel-kicker">Step 2</p>
+                    <h3>转换脚本</h3>
+                  </div>
+                  <button id="openScriptEditorButton" class="button-secondary">编辑脚本</button>
+                </div>
+                <div id="scriptPreview" class="editor-preview editor-preview-large"></div>
+                <p class="helper-text">脚本接收基础配置对象和上下文。在顶部配置块之后执行，保存时会自动校验，并在下一次构建中生效。</p>
+              </section>
+            </div>
           </section>
 
           <section class="module-panel" data-section="builds" data-theme="builds">
@@ -306,22 +356,6 @@
                   <input id="refreshIntervalMinutes" type="number" min="1" value="30" />
                 </label>
               </div>
-
-              <div class="raw-config-block">
-                <div class="secure-head compact-head">
-                  <div>
-                    <p class="panel-kicker">Raw Top Config</p>
-                    <h3>顶部配置块</h3>
-                  </div>
-                  <button id="openRawConfigEditorButton" type="button" class="button-secondary">编辑</button>
-                </div>
-                <label class="toggle-row">
-                  <span>启用自定义顶部配置</span>
-                  <input id="rawTopConfigEnabled" type="checkbox" />
-                </label>
-                <div id="rawTopConfigPreview" class="editor-preview"></div>
-                <p class="helper-text">这里只允许写 `proxies` 和 `proxy-groups` 之外的顶层 YAML 字段。启用后，这些字段将直接出现在最终 YAML 顶部。</p>
-              </div>
             </section>
           </section>
         </main>
@@ -351,19 +385,19 @@
       </div>
     </div>
 
-    <div id="rawConfigModal" class="modal hidden" aria-hidden="true">
-      <div class="modal-backdrop" data-close-modal="raw"></div>
+    <div id="textEditorModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal="text-editor"></div>
       <div class="modal-dialog">
         <div class="modal-header">
           <div>
-            <p class="panel-kicker">Raw Top Config</p>
-            <h2>编辑顶部配置块</h2>
+            <p class="panel-kicker">Editor</p>
+            <h2 id="textEditorModalTitle">编辑内容</h2>
           </div>
-          <button id="closeRawConfigModalButton" type="button" class="button-secondary">关闭</button>
+          <button id="closeTextEditorModalButton" type="button" class="button-secondary">关闭</button>
         </div>
-        <textarea id="rawTopConfigContent" class="code-editor modal-editor" spellcheck="false"></textarea>
+        <textarea id="textEditorModalInput" class="code-editor modal-editor" spellcheck="false"></textarea>
         <div class="modal-actions">
-          <button id="saveRawConfigButton" class="button-primary">应用并关闭</button>
+          <button id="applyTextEditorModalButton" class="button-primary" type="button">应用内容</button>
         </div>
       </div>
     </div>
