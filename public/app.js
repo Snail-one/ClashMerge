@@ -1,4 +1,4 @@
-﻿const storageKey = "proxy-manager-admin-token";
+const storageKey = "proxy-manager-admin-token";
 const themeStorageKey = "proxy-manager-theme";
 let toastTimerSeed = 0;
 
@@ -273,6 +273,13 @@ function formatBytes(value) {
   return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+function getStatusBadge(status) {
+  if (status === "success") return '<span class="badge ok">正常</span>' ;
+  if (status === "error") return '<span class="badge err">异常</span>' ;
+  if (!status || status === "idle") return '<span class="badge">空闲</span>' ;
+  return `<span class="badge">${escapeHtml(status)}</span>`;
+}
+
 function openModal(modal) {
   modal.classList.remove("hidden");
   modal.setAttribute("aria-hidden", "false");
@@ -341,7 +348,43 @@ function renderSystem() {
   elements.subscriptionUrl.value = subscriptionUrl;
   elements.subscriptionUrl.classList.toggle("hidden", !state.subscriptionVisible);
   elements.toggleSubscriptionButton.textContent = state.subscriptionVisible ? "隐藏订阅地址" : "显示订阅地址";
-  elements.systemSummary.textContent = `调度状态：${settings.lastSchedulerStatus || "idle"}；最近调度：${formatDate(settings.lastSchedulerRunAt)}；最近构建：${formatDate(settings.lastBuildAt)}；刷新间隔：${settings.refreshIntervalMinutes} 分钟；顶部配置块：${settings.rawTopConfigEnabled ? "已启用" : "未启用"}。`;
+  elements.systemSummary.innerHTML = `
+    <div class="system-summary-grid">
+      <article class="system-summary-card">
+        <div class="system-summary-header">
+          <span class="stat-label">调度任务</span>
+          ${getStatusBadge(settings.lastSchedulerStatus)}
+        </div>
+        <strong class="system-summary-value">${formatDate(settings.lastSchedulerRunAt)}</strong>
+        <div class="system-summary-note">${settings.autoRefreshEnabled ? `已开启自动刷新，每 ${settings.refreshIntervalMinutes} 分钟运行一次` : "自动刷新已关闭，仅手动触发"}</div>
+      </article>
+      <article class="system-summary-card">
+        <div class="system-summary-header">
+          <span class="stat-label">输出构建</span>
+          ${getStatusBadge(settings.lastBuildStatus)}
+        </div>
+        <strong class="system-summary-value">${formatDate(settings.lastBuildAt)}</strong>
+        <div class="system-summary-note">${settings.autoBuildEnabled ? "源数据刷新后会自动生成输出" : "自动构建已关闭"}</div>
+      </article>
+      <article class="system-summary-card">
+        <div class="system-summary-header">
+          <span class="stat-label">配置注入</span>
+          <span class="badge">${settings.rawTopConfigEnabled ? "已启用" : "未启用"}</span>
+        </div>
+        <strong class="system-summary-value">${settings.rawTopConfigEnabled ? "顶部配置块生效中" : "当前未合并顶部配置块"}</strong>
+        <div class="system-summary-note">预览已同步到编辑器，保存设置后会在下次构建时应用</div>
+      </article>
+      <article class="system-summary-card">
+        <div class="system-summary-header">
+          <span class="stat-label">发布地址</span>
+          <span class="badge">${settings.publicBaseUrl ? "已设置" : "自动推断"}</span>
+        </div>
+        <strong class="system-summary-value">${escapeHtml(settings.publicBaseUrl || "跟随当前请求地址")}</strong>
+        <div class="system-summary-note">安全订阅链接已生成，可按需显示、复制或轮换令牌</div>
+      </article>
+    </div>
+    ${settings.lastSchedulerError ? `<div class="system-summary-error">最近调度错误：${escapeHtml(settings.lastSchedulerError)}</div>` : ""}
+  `;
   renderOverview();
 }
 

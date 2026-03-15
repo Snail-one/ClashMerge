@@ -52,7 +52,7 @@ function createDefaultGroups(proxies) {
 
   return [
     {
-      name: "snail",
+      name: "\u5168\u90e8\u8282\u70b9",
       type: "select",
       proxies: names,
     },

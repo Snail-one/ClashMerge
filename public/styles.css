@@ -536,7 +536,52 @@ textarea {
 }
 
 .system-summary {
-  white-space: pre-wrap;
+  display: grid;
+  gap: 12px;
+}
+
+.system-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.system-summary-card {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-alt);
+}
+
+.system-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-summary-value {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.system-summary-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.system-summary-error {
+  padding: 12px 14px;
+  border: 1px solid rgba(217, 48, 37, 0.24);
+  border-radius: 14px;
+  background: var(--error-bg);
+  color: var(--error);
+  line-height: 1.5;
 }
 
 .secure-output,
