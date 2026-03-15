@@ -676,6 +676,23 @@ textarea {
   font-size: 16px;
 }
 
+.source-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.source-badges .badge {
+  margin-right: 0;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -697,6 +714,68 @@ textarea {
 .badge.err {
   background: var(--error-soft);
   color: var(--error);
+}
+
+
+.compact-source-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.source-title-stack {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.source-badges-tight {
+  gap: 5px;
+}
+
+.source-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.source-summary-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+
+.source-summary-item strong {
+  font-size: 14px;
+}
+
+.source-summary-label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.source-error {
+  color: var(--error);
+}
+
+.compact-source-actions {
+  gap: 8px;
+}
+
+.compact-source-actions .button-secondary {
+  min-height: 34px;
+  padding: 0 14px;
+}
+
+.compact-source-actions .button-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--surface-alt);
 }
 
 .log-toolbar {

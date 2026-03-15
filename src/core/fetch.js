@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
@@ -196,6 +196,19 @@ async function readSourceContentForView(source) {
   return { content, mode: source.type };
 }
 
+async function readSourceContentForBuild(source) {
+  if (source.type === "remote") {
+    try {
+      const content = await readCachedSourceContent(source.id);
+      return { content, mode: "cache" };
+    } catch {
+      throw new Error("Remote source has not been refreshed yet");
+    }
+  }
+
+  const content = await loadSourceContent(source);
+  return { content, mode: source.type };
+}
 async function cleanupOrphanSourceCache(sourceIds) {
   const activeIds = new Set(sourceIds);
   const files = await fs.readdir(paths.cacheDir, { withFileTypes: true });
@@ -219,6 +232,7 @@ module.exports = {
   deleteCachedSourceContent,
   loadSourceContent,
   readCachedSourceContent,
+  readSourceContentForBuild,
   readSourceContentForView,
   requestPinnedRemoteText,
 };

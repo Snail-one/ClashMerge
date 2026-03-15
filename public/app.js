@@ -210,6 +210,7 @@ function startSourceEdit(source) {
   elements.sourceForm.elements.url.value = source.url || "";
   elements.sourceForm.elements.content.value = source.content || "";
   elements.sourceForm.elements.tags.value = Array.isArray(source.tags) ? source.tags.join(",") : "";
+  elements.sourceForm.elements.useAsTemplate.checked = source.useAsTemplate === true;
   updateSourceFormVisibility();
   elements.sourceSubmitButton.textContent = "保存修改";
   elements.sourceCancelEditButton.classList.remove("hidden");
@@ -390,31 +391,33 @@ function renderSystem() {
 
 function renderSources() {
   if (state.sources.length === 0) {
-    elements.sourcesList.innerHTML = '<div class="source-card">\u8fd8\u6ca1\u6709\u8ba2\u9605\u6e90\uff0c\u5148\u6dfb\u52a0\u4e00\u4e2a\u6765\u6e90\u5f00\u59cb\u5de5\u4f5c\u3002</div>';
+    elements.sourcesList.innerHTML = '<div class="source-card">还没有订阅源，先添加一个来源开始工作。</div>';
     renderOverview();
     return;
   }
 
   elements.sourcesList.innerHTML = state.sources.map(source => {
     const refreshBadge = source.lastRefreshStatus === "success"
-      ? '<span class="badge ok">\u5237\u65b0\u6210\u529f</span>'
+      ? '<span class="badge ok">刷新成功</span>'
       : source.lastRefreshStatus === "error"
-        ? '<span class="badge err">\u5237\u65b0\u5931\u8d25</span>'
-        : '<span class="badge">\u672a\u5237\u65b0</span>';
+        ? '<span class="badge err">刷新失败</span>'
+        : '<span class="badge">未刷新</span>';
 
     return `
       <article class="source-card">
         <div><strong>${escapeHtml(source.name)}</strong></div>
-        <div class="source-meta">${escapeHtml(source.type)} \u00b7 ${source.enabled ? "\u542f\u7528" : "\u7981\u7528"} \u00b7 ${source.lastBuildIncluded ? "\u5df2\u53c2\u4e0e\u6700\u8fd1\u6784\u5efa" : "\u672a\u53c2\u4e0e\u6700\u8fd1\u6784\u5efa"}</div>
+        <div class="source-meta">${escapeHtml(source.type)} · ${source.enabled ? "启用" : "禁用"} · ${source.lastBuildIncluded ? "已参与最近构建" : "未参与最近构建"}${source.useAsTemplate ? " · 结构模板" : ""}</div>
+        <div class="source-meta">默认规则模板：${source.useAsTemplate ? "是（当前默认）" : "否"}</div>
         <div class="source-meta">${escapeHtml(getSourceLocationText(source))}</div>
         <div>${refreshBadge}${(source.tags || []).map(tag => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
-        <div class="source-meta">\u6700\u8fd1\u5237\u65b0\uff1a${escapeHtml(formatDate(source.lastRefreshAt))}${source.lastRefreshError ? ` \u00b7 \u9519\u8bef\uff1a${escapeHtml(source.lastRefreshError)}` : ""}</div>
+        <div class="source-meta">最近刷新：${escapeHtml(formatDate(source.lastRefreshAt))}${source.lastRefreshError ? ` · 错误：${escapeHtml(source.lastRefreshError)}` : ""}</div>
         <div class="inline-actions">
-          <button class="button-secondary" data-action="toggle" data-id="${source.id}">${source.enabled ? "\u7981\u7528" : "\u542f\u7528"}</button>
-          <button class="button-secondary" data-action="edit" data-id="${source.id}">\u7f16\u8f91</button>
-          <button class="button-secondary" data-action="refresh" data-id="${source.id}">\u5237\u65b0</button>
-          <button class="button-secondary" data-action="content" data-id="${source.id}">\u67e5\u770b\u539f\u6587</button>
-          <button class="button-secondary" data-action="delete" data-id="${source.id}">\u5220\u9664</button>
+          <button class="button-secondary" data-action="toggle" data-id="${source.id}">${source.enabled ? "禁用" : "启用"}</button>
+          <button class="button-secondary" data-action="template" data-id="${source.id}">${source.useAsTemplate ? "取消模板" : "设为模板"}</button>
+          <button class="button-secondary" data-action="edit" data-id="${source.id}">编辑</button>
+          <button class="button-secondary" data-action="refresh" data-id="${source.id}">刷新</button>
+          <button class="button-secondary" data-action="content" data-id="${source.id}">查看原文</button>
+          <button class="button-secondary" data-action="delete" data-id="${source.id}">删除</button>
         </div>
       </article>
     `;
@@ -673,24 +676,25 @@ async function handleAddSource(event) {
     url: formData.get("url"),
     content: formData.get("content"),
     tags: String(formData.get("tags") || "").split(",").map(item => item.trim()).filter(Boolean),
+    useAsTemplate: formData.get("useAsTemplate") === "on",
   };
 
   const isEditing = Boolean(state.editingSourceId);
-  setStatus(isEditing ? "\u6b63\u5728\u4fdd\u5b58\u8ba2\u9605\u6e90..." : "\u6b63\u5728\u6dfb\u52a0\u8ba2\u9605\u6e90...");
+  setStatus(isEditing ? "正在保存订阅源..." : "正在添加订阅源...");
   await request(isEditing ? `/api/sources/${state.editingSourceId}` : "/api/sources", {
     method: isEditing ? "PUT" : "POST",
     body: JSON.stringify(payload),
   });
   resetSourceForm();
   await Promise.all([loadSources(), loadLogs()]);
-  setStatus(isEditing ? "\u8ba2\u9605\u6e90\u5df2\u66f4\u65b0" : "\u8ba2\u9605\u6e90\u5df2\u6dfb\u52a0");
-  showToast(isEditing ? "\u8ba2\u9605\u6e90\u5df2\u66f4\u65b0" : "\u8ba2\u9605\u6e90\u5df2\u6dfb\u52a0", "ok");
+  setStatus(isEditing ? "订阅源已更新" : "订阅源已添加");
+  showToast(isEditing ? "订阅源已更新" : "订阅源已添加", "ok");
 }
 
 async function handleViewSourceContent(source) {
-  setStatus(`\u6b63\u5728\u52a0\u8f7d ${source.name} \u7684\u539f\u6587...`);
-  elements.sourceContentTitle.textContent = `${source.name} \u539f\u6587`;
-  elements.sourceContentMeta.textContent = "\u6b63\u5728\u52a0\u8f7d...";
+  setStatus(`正在加载 ${source.name} 的原文...`);
+  elements.sourceContentTitle.textContent = `${source.name} 原文`;
+  elements.sourceContentMeta.textContent = "正在加载...";
   elements.sourceContentMeta.dataset.tone = "neutral";
   elements.sourceContentPreview.textContent = "";
   openModal(elements.sourceContentModal);
@@ -698,16 +702,16 @@ async function handleViewSourceContent(source) {
   try {
     const result = await request(`/api/sources/${source.id}/content`);
     const modeText = result.mode === "cache"
-      ? "\u8fdc\u7a0b\u7f13\u5b58"
+      ? "远程缓存"
       : result.mode === "live"
-        ? "\u8fdc\u7a0b\u5b9e\u65f6\u62c9\u53d6"
-        : "\u5185\u8054\u5185\u5bb9";
-    elements.sourceContentMeta.textContent = `\u6765\u6e90\uff1a${source.type}\uff1b\u8bfb\u53d6\u65b9\u5f0f\uff1a${modeText}\uff1b\u5b57\u7b26\u6570\uff1a${result.content.length}`;
+        ? "远程实时拉取"
+        : "内联内容";
+    elements.sourceContentMeta.textContent = `来源：${source.type}；读取方式：${modeText}；字符数：${result.content.length}`;
     elements.sourceContentMeta.dataset.tone = "ok";
-    elements.sourceContentPreview.textContent = result.content || "\u8be5\u8ba2\u9605\u5f53\u524d\u6ca1\u6709\u5185\u5bb9\u3002";
-    setStatus(`${source.name} \u539f\u6587\u5df2\u52a0\u8f7d`);
+    elements.sourceContentPreview.textContent = result.content || "该订阅当前没有内容。";
+    setStatus(`${source.name} 原文已加载`);
   } catch (error) {
-    elements.sourceContentMeta.textContent = `\u52a0\u8f7d\u5931\u8d25\uff1a${error.message}`;
+    elements.sourceContentMeta.textContent = `加载失败：${error.message}`;
     elements.sourceContentMeta.dataset.tone = "error";
     elements.sourceContentPreview.textContent = "";
     setStatus(error.message);
@@ -724,25 +728,33 @@ async function handleSourceAction(event) {
   if (!source) return;
 
   if (action === "toggle") {
-    setStatus(`\u6b63\u5728${source.enabled ? "\u7981\u7528" : "\u542f\u7528"} ${source.name}...`);
+    setStatus(`正在${source.enabled ? "禁用" : "启用"} ${source.name}...`);
     await request(`/api/sources/${id}`, { method: "PUT", body: JSON.stringify({ enabled: !source.enabled }) });
     await Promise.all([loadSources(), loadLogs()]);
-    setStatus(`${source.name} \u5df2\u66f4\u65b0`);
-    showToast(`${source.name} \u5df2${source.enabled ? "\u7981\u7528" : "\u542f\u7528"}`, "ok");
+    setStatus(`${source.name} 已更新`);
+    showToast(`${source.name} 已${source.enabled ? "禁用" : "启用"}`, "ok");
   }
 
   if (action === "edit") {
     startSourceEdit(source);
-    setStatus(`\u6b63\u5728\u7f16\u8f91 ${source.name}`);
-    showToast(`\u5df2\u8f7d\u5165 ${source.name} \u7684\u914d\u7f6e`, "ok");
+    setStatus(`正在编辑 ${source.name}`);
+    showToast(`已载入 ${source.name} 的配置`, "ok");
+  }
+
+  if (action === "template") {
+    setStatus(`正在更新 ${source.name} 的模板状态...`);
+    await request(`/api/sources/${id}`, { method: "PUT", body: JSON.stringify({ useAsTemplate: !source.useAsTemplate }) });
+    await Promise.all([loadSystem(), loadSources(), loadBuilds(), loadOutput(), loadLogs()]);
+    setStatus(`${source.name} 模板状态已更新`);
+    showToast(source.useAsTemplate ? `已取消 ${source.name} 的模板角色` : `${source.name} 已设为模板源`, "ok");
   }
 
   if (action === "refresh") {
-    setStatus(`\u6b63\u5728\u5237\u65b0 ${source.name}...`);
+    setStatus(`正在刷新 ${source.name}...`);
     await request(`/api/sources/${id}/refresh`, { method: "POST" });
     await Promise.all([loadSources(), loadSystem(), loadLogs()]);
-    setStatus(`${source.name} \u5df2\u5237\u65b0`);
-    showToast(`${source.name} \u5df2\u5237\u65b0`, "ok");
+    setStatus(`${source.name} 已刷新`);
+    showToast(`${source.name} 已刷新`, "ok");
   }
 
   if (action === "content") {
@@ -750,14 +762,14 @@ async function handleSourceAction(event) {
   }
 
   if (action === "delete") {
-    setStatus(`\u6b63\u5728\u5220\u9664 ${source.name}...`);
+    setStatus(`正在删除 ${source.name}...`);
     await request(`/api/sources/${id}`, { method: "DELETE" });
     if (state.editingSourceId === id) {
       resetSourceForm();
     }
     await Promise.all([loadSources(), loadLogs()]);
-    setStatus(`${source.name} \u5df2\u5220\u9664`);
-    showToast(`${source.name} \u5df2\u5220\u9664`, "warn");
+    setStatus(`${source.name} 已删除`);
+    showToast(`${source.name} 已删除`, "warn");
   }
 }
 
@@ -918,7 +930,7 @@ elements.authForm.addEventListener("submit", event => { handleAuthSubmit(event).
 }); });
 elements.logoutButton.addEventListener("click", handleLogout);
 elements.sourceType.addEventListener("change", updateSourceFormVisibility);
-elements.sourceCancelEditButton.addEventListener("click", () => { resetSourceForm(); setStatus("\u5df2\u53d6\u6d88\u7f16\u8f91"); });
+elements.sourceCancelEditButton.addEventListener("click", () => { resetSourceForm(); setStatus("已取消编辑"); });
 elements.sourceForm.addEventListener("submit", event => { setActiveSection("sources"); handleAddSource(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.sourcesList.addEventListener("click", event => { setActiveSection("sources"); handleSourceAction(event).catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.buildButton.addEventListener("click", () => { setActiveSection("builds"); handleBuild().catch(error => { setStatus(error.message); showErrorToast(error); }); });

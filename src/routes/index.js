@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 const path = require("node:path");
 const { URL } = require("node:url");
 
@@ -175,6 +175,15 @@ async function validateScriptContent(content) {
     message: `校验通过：${proxyCount} 个节点，${groupCount} 个分组${warningText}。`,
   };
 }
+async function maybeAutoBuild(reason) {
+  const settings = await readSystemSettings();
+
+  if (!settings.autoBuildEnabled) {
+    return null;
+  }
+
+  return buildConfig({ reason });
+}
 
 async function handleRequest(req, res, appContext = {}) {
   const url = new URL(req.url, "http://127.0.0.1");
@@ -249,8 +258,9 @@ async function handleRequest(req, res, appContext = {}) {
     if (req.method === "POST" && url.pathname === "/api/sources") {
       const body = await readJson(req, { maxBytes: 1024 * 1024 });
       const source = await addSource(body);
+      const build = await maybeAutoBuild("source_create");
       await writeAuditLog({ ...audit, action: "source.create", outcome: "success", sourceId: source.id, sourceType: source.type });
-      sendJson(res, 201, source);
+      sendJson(res, 201, build ? { ...source, build } : source);
       return;
     }
 
@@ -283,18 +293,20 @@ async function handleRequest(req, res, appContext = {}) {
         return;
       }
 
+      const build = await maybeAutoBuild("source_update");
       await writeAuditLog({ ...audit, action: "source.update", outcome: "success", sourceId: source.id, sourceType: source.type });
-      sendJson(res, 200, source);
+      sendJson(res, 200, build ? { ...source, build } : source);
       return;
     }
 
     if (sourceMatch && req.method === "DELETE") {
       const deleted = await deleteSource(sourceMatch[1]);
+      const build = deleted ? await maybeAutoBuild("source_delete") : null;
       if (deleted) {
         await deleteCachedSourceContent(sourceMatch[1]);
         await writeAuditLog({ ...audit, action: "source.delete", outcome: "success", sourceId: sourceMatch[1], cacheCleared: true });
       }
-      sendJson(res, deleted ? 200 : 404, deleted ? { deleted: true } : { error: "Source not found" });
+      sendJson(res, deleted ? 200 : 404, deleted ? (build ? { deleted: true, build } : { deleted: true }) : { error: "Source not found" });
       return;
     }
 
@@ -315,12 +327,14 @@ async function handleRequest(req, res, appContext = {}) {
       }
 
       await markSourceUpdated(source.id);
+      const build = await maybeAutoBuild("source_refresh");
       await writeAuditLog({ ...audit, action: "source.refresh", outcome: "success", sourceId: source.id, bytes: Buffer.byteLength(result.content, "utf8") });
       sendJson(res, 200, {
         id: source.id,
         name: source.name,
         bytes: Buffer.byteLength(result.content, "utf8"),
         updatedAt: new Date().toISOString(),
+        ...(build ? { build } : {}),
       });
       return;
     }

@@ -1,4 +1,4 @@
-﻿process.env.ALLOW_IN_PROCESS_TRANSFORM_FALLBACK = "true";
+process.env.ALLOW_IN_PROCESS_TRANSFORM_FALLBACK = "true";
 process.env.NODE_ENV = "test";
 process.env.MAX_TOTAL_LOG_BYTES = "2048";
 process.env.MAX_LOG_RETENTION_DAYS = "10";
@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 const { createServer } = require("../src/app");
 const { paths } = require("../src/config/paths");
 const { ensureProjectFiles, createDefaultSystemSettings, defaultScript } = require("../src/core/bootstrap");
-const { buildConfig } = require("../src/core/build");
+const { buildConfig, collectBuildInput } = require("../src/core/build");
 const { listBuilds, MAX_BUILD_RECORDS, trimBuildRecords, writeBuildRecord } = require("../src/core/builds");
 const {
   appendLogEntry,
@@ -25,6 +25,7 @@ const {
 } = require("../src/core/logs");
 const { parseClashConfig } = require("../src/core/parse");
 const { mergeConfigs } = require("../src/core/merge");
+const { addSource, listSources, updateSource } = require("../src/core/sources");
 const { runScheduledCycle } = require("../src/core/scheduler");
 const { readPersistedSystemSettings, readSystemSettings } = require("../src/core/system");
 
@@ -109,6 +110,231 @@ async function testBuildConfigWithRawTopConfig() {
   assert.match(output, /全部节点/);
 }
 
+async function testTemplateSourceSelection() {
+  const first = await addSource({
+    name: "Template A",
+    type: "inline",
+    content: "proxies: []\n",
+    useAsTemplate: true,
+  });
+  const second = await addSource({
+    name: "Template B",
+    type: "inline",
+    content: "proxies: []\n",
+    useAsTemplate: true,
+  });
+
+  let sources = await listSources();
+  assert.equal(sources.filter(source => source.useAsTemplate).length, 1);
+  assert.equal(sources.find(source => source.useAsTemplate).id, second.id);
+
+  await updateSource(first.id, { useAsTemplate: true });
+  sources = await listSources();
+  assert.equal(sources.filter(source => source.useAsTemplate).length, 1);
+  assert.equal(sources.find(source => source.useAsTemplate).id, first.id);
+
+  await updateSource(first.id, { useAsTemplate: false });
+  sources = await listSources();
+  assert.equal(sources.filter(source => source.useAsTemplate).length, 0);
+}
+
+async function testCollectBuildInputWithTemplateSource() {
+  await fs.writeFile(
+    paths.sourcesFile,
+    `${JSON.stringify([
+      { id: "src_a", name: "A", type: "local", filePath: fixtureAPath, enabled: true },
+      {
+        id: "src_tpl",
+        name: "Template",
+        type: "inline",
+        enabled: true,
+        useAsTemplate: true,
+        content: [
+          "proxies:",
+          "  - name: JP-A",
+          "    type: ss",
+          "    server: jp.example.com",
+          "    port: 443",
+          "    cipher: aes-128-gcm",
+          "    password: pass4",
+          "proxy-groups:",
+          "  - name: 模板组",
+          "    type: select",
+          "    proxies:",
+          "      - HK-A",
+          "      - SG-A",
+          "      - JP-A",
+          "rules:",
+          "  - MATCH,模板组",
+          "",
+        ].join("\n"),
+      }
+    ], null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    paths.systemFile,
+    `${JSON.stringify({
+      ...createDefaultSystemSettings(),
+      rawTopConfigEnabled: true,
+      rawTopConfigContent: "mode: rule\nrules:\n  - DOMAIN-SUFFIX,example.com,DIRECT\n"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const prepared = await collectBuildInput({ reason: "validate", persistBuildState: false });
+
+  assert.equal(prepared.templateSourceId, "src_tpl");
+  assert.equal(prepared.context.templateSourceId, "src_tpl");
+  assert.equal(prepared.baseConfig["proxy-groups"].some(group => group.name === "模板组"), true);
+  assert.deepEqual(prepared.baseConfig.rules, [
+    "DOMAIN-SUFFIX,example.com,DIRECT",
+    "MATCH,模板组",
+  ]);
+}
+
+async function withRemoteFixture(handler) {
+  let requestCount = 0;
+  const remoteContent = [
+    "proxies:",
+    "  - name: Remote-A",
+    "    type: ss",
+    "    server: remote.example.com",
+    "    port: 443",
+    "    cipher: aes-128-gcm",
+    "    password: remote-pass",
+    "",
+  ].join("\n");
+  const remoteServer = require("node:http").createServer((req, res) => {
+    requestCount += 1;
+    res.writeHead(200, { "Content-Type": "text/yaml; charset=utf-8" });
+    res.end(remoteContent);
+  });
+
+  await new Promise(resolve => remoteServer.listen(0, "127.0.0.1", resolve));
+  const address = remoteServer.address();
+  const source = {
+    id: "src_remote_cache",
+    name: "Remote Cache",
+    type: "remote",
+    enabled: true,
+    url: `http://127.0.0.1:${address.port}/sub.yaml`,
+    lastRefreshStatus: "success",
+  };
+
+  try {
+    await fs.writeFile(paths.sourcesFile, `${JSON.stringify([source], null, 2)}\n`, "utf8");
+    await fs.writeFile(path.join(paths.cacheDir, `${source.id}.yaml`), remoteContent, "utf8");
+    await handler({
+      getRequestCount: () => requestCount,
+      remoteContent,
+      source,
+    });
+  } finally {
+    await new Promise(resolve => remoteServer.close(resolve));
+  }
+}
+
+async function testBuildUsesRemoteCacheWithoutRefetch() {
+  await withRemoteFixture(async ({ getRequestCount }) => {
+    const result = await buildConfig({ reason: "manual" });
+    const output = await fs.readFile(paths.outputFile, "utf8");
+
+    assert.equal(result.status, "success");
+    assert.equal(getRequestCount(), 0);
+    assert.match(output, /Remote-A/);
+  });
+}
+
+async function testScriptValidationUsesRemoteCacheWithoutRefetch() {
+  await withRemoteFixture(async ({ getRequestCount }) => {
+    const server = await createServer({ startBackgroundJobs: false });
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const settings = await readSystemSettings();
+
+    try {
+      const response = await fetch(`${baseUrl}/api/scripts/validate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Token": settings.managementToken,
+        },
+        body: JSON.stringify({ content: defaultScript }),
+      });
+      assert.equal(response.status, 200);
+      assert.equal(getRequestCount(), 0);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+}
+async function testTemplateUpdateTriggersAutoBuild() {
+  const server = await createServer({ startBackgroundJobs: false });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const settings = await readSystemSettings();
+  const adminHeaders = {
+    "Content-Type": "application/json",
+    "X-Admin-Token": settings.managementToken,
+  };
+
+  try {
+    const createSource = await fetch(`${baseUrl}/api/sources`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        name: "Template Inline",
+        type: "inline",
+        content: [
+          "proxies:",
+          "  - name: HK-A",
+          "    type: ss",
+          "    server: hk.example.com",
+          "    port: 443",
+          "    cipher: aes-128-gcm",
+          "    password: pass1",
+          "  - name: SG-A",
+          "    type: ss",
+          "    server: sg.example.com",
+          "    port: 443",
+          "    cipher: aes-128-gcm",
+          "    password: pass2",
+          "proxy-groups:",
+          "  - name: 模板组",
+          "    type: select",
+          "    proxies:",
+          "      - HK-A",
+          "      - SG-A",
+          "rules:",
+          "  - MATCH,模板组",
+          "",
+        ].join("\n"),
+      }),
+    });
+    assert.equal(createSource.status, 201);
+    const createdSource = await createSource.json();
+    assert.equal(createdSource.build.status, "success");
+
+    const enableTemplate = await fetch(`${baseUrl}/api/sources/${createdSource.id}`, {
+      method: "PUT",
+      headers: adminHeaders,
+      body: JSON.stringify({ useAsTemplate: true }),
+    });
+    assert.equal(enableTemplate.status, 200);
+    const updatedSource = await enableTemplate.json();
+    assert.equal(updatedSource.useAsTemplate, true);
+    assert.equal(updatedSource.build.status, "success");
+
+    const output = await fs.readFile(paths.outputFile, "utf8");
+    assert.match(output, /name: 模板组/);
+    assert.match(output, /MATCH,模板组/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
 async function testScheduledCacheCleanup() {
   await fs.writeFile(
     paths.sourcesFile,
@@ -470,6 +696,11 @@ async function main() {
   await run("parseClashConfig", testParseClashConfig);
   await run("mergeConfigs", testMergeConfigs);
   await run("buildConfigWithRawTopConfig", testBuildConfigWithRawTopConfig);
+  await run("templateSourceSelection", testTemplateSourceSelection);
+  await run("collectBuildInputWithTemplateSource", testCollectBuildInputWithTemplateSource);
+  await run("buildUsesRemoteCacheWithoutRefetch", testBuildUsesRemoteCacheWithoutRefetch);
+  await run("scriptValidationUsesRemoteCacheWithoutRefetch", testScriptValidationUsesRemoteCacheWithoutRefetch);
+  await run("templateUpdateTriggersAutoBuild", testTemplateUpdateTriggersAutoBuild);
   await run("scheduledCacheCleanup", testScheduledCacheCleanup);
   await run("retentionCleanup", testRetentionCleanup);
   await run("buildRetentionCleanup", testBuildRetentionCleanup);

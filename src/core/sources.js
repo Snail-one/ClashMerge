@@ -37,6 +37,7 @@ async function normalizeSource(input) {
     lastRefreshError: input.lastRefreshError || null,
     lastContentBytes: Number.isFinite(input.lastContentBytes) ? input.lastContentBytes : 0,
     lastBuildIncluded: input.lastBuildIncluded === true,
+    useAsTemplate: input.useAsTemplate === true,
   };
 
   if (!["remote", "local", "inline"].includes(source.type)) {
@@ -64,12 +65,23 @@ async function normalizeSource(input) {
   return source;
 }
 
+function applyTemplateSelection(sources, selectedId, enabled) {
+  if (!enabled) {
+    return sources;
+  }
+
+  return sources.map(source => ({
+    ...source,
+    useAsTemplate: source.id === selectedId,
+  }));
+}
+
 async function addSource(input) {
   const sources = await listSources();
   const source = await normalizeSource(input);
-  sources.push(source);
-  await saveSources(sources);
-  return source;
+  const nextSources = applyTemplateSelection([...sources, source], source.id, source.useAsTemplate);
+  await saveSources(nextSources);
+  return nextSources.find(item => item.id === source.id);
 }
 
 async function updateSource(id, patch) {
@@ -88,8 +100,9 @@ async function updateSource(id, patch) {
   });
 
   sources[index] = next;
-  await saveSources(sources);
-  return next;
+  const nextSources = applyTemplateSelection(sources, id, next.useAsTemplate);
+  await saveSources(nextSources);
+  return nextSources[index];
 }
 
 async function updateSources(mutator) {

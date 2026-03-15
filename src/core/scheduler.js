@@ -1,4 +1,4 @@
-﻿const { buildConfig } = require("./build");
+const { buildConfig } = require("./build");
 const { cleanupOrphanSourceCache } = require("./fetch");
 const { writeAppLog } = require("./logs");
 const { readSystemSettings, updateSystemSettings } = require("./system");
@@ -42,10 +42,12 @@ async function runScheduledCycle() {
 
     await cleanupSourceCache();
 
+    if (settings.autoRefreshEnabled) {
+      await refreshAllSources();
+    }
+
     if (settings.autoBuildEnabled) {
       await buildConfig({ reason: "scheduler" });
-    } else if (settings.autoRefreshEnabled) {
-      await refreshAllSources();
     }
 
     await updateSystemSettings({

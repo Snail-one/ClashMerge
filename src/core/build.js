@@ -1,11 +1,11 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 
 const { writeOutput } = require("./generate");
 const { writeAppLog } = require("./logs");
 const { mergeConfigs } = require("./merge");
 const { parseClashConfig } = require("./parse");
-const { refreshSource } = require("./refresh");
+const { readSourceContentForBuild } = require("./fetch");
 const { listSources, updateSources } = require("./sources");
 const { writeBuildRecord } = require("./builds");
 const { readSystemSettings, updateSystemSettings, validateRawTopConfig } = require("./system");
@@ -21,23 +21,28 @@ async function collectBuildInput(options = {}) {
   const systemSettings = await readSystemSettings();
   const sources = (await listSources()).filter(source => source.enabled);
   const parsedConfigs = [];
+  let templateConfig = null;
+  let templateSourceId = null;
   const errors = [];
   const includedSourceIds = [];
 
   for (const source of sources) {
-    const refreshed = await refreshSource(source);
-
-    if (!refreshed.ok) {
+    try {
+      const loaded = await readSourceContentForBuild(source);
+      const parsedConfig = parseClashConfig(loaded.content, source);
+      parsedConfigs.push(parsedConfig);
+      if (source.useAsTemplate) {
+        templateConfig = parsedConfig;
+        templateSourceId = source.id;
+      }
+      includedSourceIds.push(source.id);
+    } catch (error) {
       errors.push({
         sourceId: source.id,
         sourceName: source.name,
-        message: refreshed.error.message,
+        message: error.message,
       });
-      continue;
     }
-
-    parsedConfigs.push(parseClashConfig(refreshed.content, source));
-    includedSourceIds.push(source.id);
   }
 
   if (options.persistBuildState !== false) {
@@ -47,12 +52,23 @@ async function collectBuildInput(options = {}) {
     })));
   }
 
-  const merged = mergeConfigs(parsedConfigs);
-  const baseConfig = systemSettings.rawTopConfigEnabled
+  const merged = mergeConfigs(parsedConfigs, { templateConfig });
+  const rawTopConfig = systemSettings.rawTopConfigEnabled
+    ? validateRawTopConfig(systemSettings.rawTopConfigContent)
+    : null;
+  const baseConfig = rawTopConfig
     ? {
-        ...validateRawTopConfig(systemSettings.rawTopConfigContent),
+        ...rawTopConfig,
         proxies: merged.proxies,
         "proxy-groups": merged["proxy-groups"],
+        ...(Array.isArray(rawTopConfig.rules) || Array.isArray(merged.rules)
+          ? {
+              rules: [
+                ...(Array.isArray(rawTopConfig.rules) ? rawTopConfig.rules : []),
+                ...(Array.isArray(merged.rules) ? merged.rules : []),
+              ],
+            }
+          : {}),
       }
     : merged;
   const context = {
@@ -60,6 +76,7 @@ async function collectBuildInput(options = {}) {
     sourceCount: sources.length,
     errors,
     reason: options.reason || "manual",
+    templateSourceId,
   };
 
   return {
@@ -69,6 +86,7 @@ async function collectBuildInput(options = {}) {
     includedSourceIds,
     baseConfig,
     context,
+    templateSourceId,
   };
 }
 
@@ -104,6 +122,7 @@ async function runBuild(options = {}) {
     proxyCount: record.proxyCount,
     groupCount: record.groupCount,
     errorCount: record.errors.length,
+    templateSourceId: prepared.templateSourceId,
   });
 
   return {

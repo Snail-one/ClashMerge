@@ -1,4 +1,4 @@
-﻿function stableClone(value, seen = new WeakSet()) {
+function stableClone(value, seen = new WeakSet()) {
   if (Array.isArray(value)) {
     return value.map(item => stableClone(item, seen));
   }
@@ -52,20 +52,33 @@ function createDefaultGroups(proxies) {
 
   return [
     {
-      name: "\u5168\u90e8\u8282\u70b9",
+      name: "全部节点",
       type: "select",
       proxies: names,
     },
   ];
 }
 
-function mergeConfigs(parsedConfigs) {
+function mergeConfigs(parsedConfigs, options = {}) {
   const proxies = dedupeProxies(parsedConfigs.flatMap(config => config.proxies));
-
-  return {
+  const templateConfig = options.templateConfig || null;
+  const templateGroups = Array.isArray(templateConfig?.proxyGroups) ? templateConfig.proxyGroups : [];
+  const templateRules = Array.isArray(templateConfig?.rules) ? templateConfig.rules : [];
+  const groupNames = new Set(templateGroups.map(group => group?.name).filter(Boolean));
+  const groups = [
+    ...(groupNames.has("全部节点") ? [] : createDefaultGroups(proxies)),
+    ...templateGroups,
+  ];
+  const merged = {
     proxies,
-    "proxy-groups": createDefaultGroups(proxies),
+    "proxy-groups": groups,
   };
+
+  if (templateRules.length > 0) {
+    merged.rules = templateRules;
+  }
+
+  return merged;
 }
 
 module.exports = {
