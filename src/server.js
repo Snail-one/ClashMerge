@@ -1,4 +1,4 @@
-﻿const { createServer } = require("./app");
+const { createServer } = require("./app");
 const { writeAppLog } = require("./core/logs");
 const { getEnvironmentManagementToken, readSystemSettings } = require("./core/system");
 

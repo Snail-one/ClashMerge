@@ -1,4 +1,4 @@
-﻿const { loadSourceContent } = require("./fetch");
+const { loadSourceContent } = require("./fetch");
 const { markSourceRefresh, markSourceUpdated } = require("./sources");
 
 async function refreshSource(source) {

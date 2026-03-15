@@ -1,4 +1,4 @@
-﻿# ClashMerge
+# ClashMerge
 
 ClashMerge 是一个个人使用的 Clash 订阅管理器，用来统一管理多个订阅源、合并节点、执行自定义 JavaScript 处理逻辑，并生成新的 Clash YAML 订阅。
 

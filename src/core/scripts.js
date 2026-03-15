@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 
 const { defaultScript } = require("./bootstrap");
 const { paths } = require("../config/paths");

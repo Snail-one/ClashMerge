@@ -1273,6 +1273,53 @@ textarea {
   min-height: 180px;
 }
 
+.source-inline-preview {
+  max-height: 220px;
+  overflow: auto;
+}
+
 .embedded-editor-card .button-secondary {
   justify-self: start;
+}
+.language-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: var(--subtle-accent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.script-code-preview {
+  position: relative;
+  margin: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--surface-alt), var(--surface));
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.monaco-editor-shell {
+  min-height: 60vh;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface-alt);
+}
+
+.monaco-editor-shell .monaco-editor,
+.monaco-editor-shell .overflow-guard {
+  border-radius: 18px;
+}
+@media (max-width: 900px) {
+  .source-inline-preview {
+    max-height: 180px;
+  }
 }

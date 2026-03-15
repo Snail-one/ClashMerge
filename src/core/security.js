@@ -1,4 +1,4 @@
-﻿const dns = require("node:dns/promises");
+const dns = require("node:dns/promises");
 const fs = require("node:fs/promises");
 const net = require("node:net");
 const path = require("node:path");

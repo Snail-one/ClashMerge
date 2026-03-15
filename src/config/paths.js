@@ -1,4 +1,4 @@
-﻿const path = require("node:path");
+const path = require("node:path");
 
 const rootDir = path.resolve(__dirname, "..", "..");
 const dataDir = path.join(rootDir, "data");

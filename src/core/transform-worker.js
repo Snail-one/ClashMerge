@@ -1,4 +1,4 @@
-﻿const { runTransformInProcess } = require("./transform-runtime");
+const { runTransformInProcess } = require("./transform-runtime");
 
 process.on("message", async message => {
   if (!message || message.type !== "run-transform") {

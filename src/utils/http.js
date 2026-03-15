@@ -1,4 +1,4 @@
-﻿const MAX_JSON_BYTES = 1024 * 1024;
+const MAX_JSON_BYTES = 1024 * 1024;
 
 function createHttpError(statusCode, message) {
   const error = new Error(message);

@@ -259,11 +259,12 @@
                   <div>
                     <p class="panel-kicker">Step 2</p>
                     <h3>转换脚本</h3>
+                    <div class="language-chip">JavaScript</div>
                   </div>
                   <button id="openScriptEditorButton" class="button-secondary">编辑脚本</button>
                 </div>
-                <div id="scriptPreview" class="editor-preview editor-preview-large"></div>
-                <p class="helper-text">脚本接收基础配置对象和上下文。在顶部配置块之后执行，保存时会自动校验，并在下一次构建中生效。</p>
+                <pre id="scriptPreview" class="editor-preview editor-preview-large script-code-preview"></pre>
+                <p class="helper-text">这里编辑的是 JavaScript 转换脚本。脚本接收基础配置对象和上下文，在顶部配置块之后执行，保存时会自动校验，并在下一次构建中生效。</p>
               </section>
             </div>
           </section>
@@ -368,14 +369,12 @@
         <div class="modal-header">
           <div>
             <p class="panel-kicker">Transform</p>
-            <h2>编辑脚本</h2>
+            <h2>编辑脚本（JavaScript）</h2>
           </div>
           <button id="closeScriptModalButton" type="button" class="button-secondary">关闭</button>
         </div>
-        <div class="code-editor-shell">
-          <pre id="scriptLineNumbers" class="code-line-numbers">1</pre>
-          <textarea id="scriptEditor" class="code-editor modal-editor with-gutter" spellcheck="false"></textarea>
-        </div>
+        <div id="scriptMonacoMount" class="monaco-editor-shell"></div>
+        <textarea id="scriptEditor" class="code-editor modal-editor hidden" spellcheck="false"></textarea>
         <div id="scriptValidationResult" class="validation-message">尚未校验</div>
         <div class="modal-actions">
           <button id="resetScriptButton" class="button-secondary" type="button">恢复默认</button>
@@ -417,6 +416,7 @@
       </div>
     </div>
 
+    <script src="/vendor/monaco/vs/loader.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

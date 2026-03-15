@@ -1,4 +1,4 @@
-﻿const path = require("node:path");
+const path = require("node:path");
 const { fork } = require("node:child_process");
 
 const { readDefaultScript, runTransformInProcess } = require("./transform-runtime");

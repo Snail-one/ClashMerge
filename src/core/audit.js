@@ -1,4 +1,4 @@
-﻿const { appendLogEntry } = require("./logs");
+const { appendLogEntry } = require("./logs");
 
 async function writeAuditLog(entry) {
   return appendLogEntry("audit", entry);

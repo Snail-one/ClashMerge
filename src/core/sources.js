@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 
 const { paths } = require("../config/paths");

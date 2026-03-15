@@ -11,6 +11,7 @@ const { createServer } = require("../src/app");
 const { paths } = require("../src/config/paths");
 const { ensureProjectFiles, createDefaultSystemSettings, defaultScript } = require("../src/core/bootstrap");
 const { buildConfig, collectBuildInput } = require("../src/core/build");
+const { createOutputYaml } = require("../src/core/generate");
 const { listBuilds, MAX_BUILD_RECORDS, trimBuildRecords, writeBuildRecord } = require("../src/core/builds");
 const {
   appendLogEntry,
@@ -108,6 +109,46 @@ async function testBuildConfigWithRawTopConfig() {
   assert.match(output, /mixed-port: 35931/);
   assert.match(output, /proxy-groups:/);
   assert.match(output, /全部节点/);
+}
+
+async function testGeneratedYamlMatchesMihomoShape() {
+  const output = createOutputYaml({
+    rules: ["MATCH,全部节点"],
+    proxies: [
+      {
+        name: "HK-A",
+        type: "ss",
+        server: "hk.example.com",
+        port: 443,
+        cipher: "aes-128-gcm",
+        password: "pass1",
+        __meta: { sourceId: "src_a" },
+      },
+    ],
+    "proxy-groups": [
+      {
+        name: "全部节点",
+        type: "select",
+        proxies: ["HK-A"],
+      },
+    ],
+    mode: "rule",
+    "mixed-port": 7890,
+    "external-controller": "127.0.0.1:9090",
+    dns: {
+      enable: true,
+      nameserver: ["1.1.1.1", "8.8.8.8"],
+      fallback: undefined,
+    },
+  });
+  const parsed = parseClashConfig(output, { id: "generated", name: "Generated" });
+
+  assert.match(output, /^mixed-port: 7890\nmode: rule\nexternal-controller: 127.0.0.1:9090\ndns:\n  enable: true\n  nameserver:\n    - 1.1.1.1\n    - 8.8.8.8\nproxies:\n/m);
+  assert.doesNotMatch(output, /__meta/);
+  assert.doesNotMatch(output, /\{.*\}/);
+  assert.equal(parsed.proxies.length, 1);
+  assert.equal(parsed.proxyGroups.length, 1);
+  assert.deepEqual(parsed.rules, ["MATCH,全部节点"]);
 }
 
 async function testTemplateSourceSelection() {
@@ -696,6 +737,7 @@ async function main() {
   await run("parseClashConfig", testParseClashConfig);
   await run("mergeConfigs", testMergeConfigs);
   await run("buildConfigWithRawTopConfig", testBuildConfigWithRawTopConfig);
+  await run("generatedYamlMatchesMihomoShape", testGeneratedYamlMatchesMihomoShape);
   await run("templateSourceSelection", testTemplateSourceSelection);
   await run("collectBuildInputWithTemplateSource", testCollectBuildInputWithTemplateSource);
   await run("buildUsesRemoteCacheWithoutRefetch", testBuildUsesRemoteCacheWithoutRefetch);

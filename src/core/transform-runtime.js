@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs/promises");
+const fs = require("node:fs/promises");
 const vm = require("node:vm");
 
 const { paths } = require("../config/paths");
@@ -100,6 +100,20 @@ function assertNoSuspiciousTopLevelStatements(scriptContent) {
   }
 }
 
+function attachLineNumberToError(error) {
+  if (!error || /on line \d+/i.test(String(error.message || ""))) {
+    return error;
+  }
+
+  const stack = String(error.stack || "");
+  const match = stack.match(/default\.js:(\d+):(\d+)/i);
+  if (!match) {
+    return error;
+  }
+
+  error.message = `${error.message} on line ${match[1]}`;
+  return error;
+}
 function loadTransformFromContent(scriptContent) {
   assertNoSuspiciousTopLevelStatements(scriptContent);
   assertNoForbiddenPatterns(scriptContent);

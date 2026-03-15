@@ -17,6 +17,8 @@ const state = {
   theme: window.localStorage.getItem(themeStorageKey) || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
   editingSourceId: null,
   textEditorContext: null,
+  scriptMonaco: null,
+  scriptMonacoReady: null,
 };
 
 const elements = {
@@ -41,7 +43,7 @@ const elements = {
   openInlineSourceEditorButton: document.querySelector("#openInlineSourceEditorButton"),
   sourcesList: document.querySelector("#sourcesList"),
   scriptEditor: document.querySelector("#scriptEditor"),
-  scriptLineNumbers: document.querySelector("#scriptLineNumbers"),
+  scriptMonacoMount: document.querySelector("#scriptMonacoMount"),
   rawTopConfigContent: document.querySelector("#rawTopConfigContent"),
   openRawConfigEditorButton: document.querySelector("#openRawConfigEditorButton"),
   scriptPreview: document.querySelector("#scriptPreview"),
@@ -127,6 +129,9 @@ function applyTheme(theme, options = {}) {
   }
   elements.themeToggleButton.textContent = nextTheme === "dark" ? "浅色模式" : "暗黑模式";
   elements.themeToggleButton.setAttribute("aria-pressed", nextTheme === "dark" ? "true" : "false");
+  if (window.monaco && state.scriptMonaco) {
+    window.monaco.editor.setTheme(getScriptEditorTheme());
+  }
 }
 
 function showToast(message, tone = "neutral") {
@@ -288,11 +293,129 @@ function updateSourceFormVisibility() {
   elements.inlineSourceHint.classList.toggle("hidden", !isInline);
 }
 
-function updateScriptLineNumbers() {
-  const lineCount = Math.max(1, elements.scriptEditor.value.split("\n").length);
-  const numbers = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join("\n");
-  elements.scriptLineNumbers.textContent = numbers;
-  elements.scriptLineNumbers.scrollTop = elements.scriptEditor.scrollTop;
+function clearScriptMarkers() {
+  if (!window.monaco || !state.scriptMonaco) {
+    return;
+  }
+  window.monaco.editor.setModelMarkers(state.scriptMonaco.getModel(), "script-validation", []);
+}
+
+function extractScriptMarkerLines(message) {
+  const text = String(message || "");
+  const markers = [];
+  const lineMatches = [...text.matchAll(/on line\s+(\d+)/gi)];
+  for (const match of lineMatches) {
+    const lineNumber = Number(match[1]);
+    if (Number.isInteger(lineNumber) && lineNumber > 0) {
+      markers.push(lineNumber);
+    }
+  }
+
+  const multiLineMatch = text.match(/line\s+((?:\d+\s*,\s*)*\d+)/i);
+  if (multiLineMatch) {
+    multiLineMatch[1].split(",").map(value => Number(value.trim())).forEach(lineNumber => {
+      if (Number.isInteger(lineNumber) && lineNumber > 0) {
+        markers.push(lineNumber);
+      }
+    });
+  }
+
+  return [...new Set(markers)];
+}
+
+function applyScriptMarkers(message) {
+  if (!window.monaco || !state.scriptMonaco) {
+    return;
+  }
+
+  const model = state.scriptMonaco.getModel();
+  if (!model) {
+    return;
+  }
+
+  const lines = extractScriptMarkerLines(message);
+  const markers = lines.map(lineNumber => {
+    const maxColumn = model.getLineMaxColumn(lineNumber);
+    return {
+      startLineNumber: lineNumber,
+      endLineNumber: lineNumber,
+      startColumn: 1,
+      endColumn: Math.max(2, maxColumn),
+      message: String(message || "脚本校验失败"),
+      severity: window.monaco.MarkerSeverity.Error,
+    };
+  });
+
+  window.monaco.editor.setModelMarkers(model, "script-validation", markers);
+  if (markers.length > 0) {
+    state.scriptMonaco.revealLineInCenter(markers[0].startLineNumber);
+  }
+}
+function getScriptEditorTheme() {
+  return state.theme === "dark" ? "vs-dark" : "vs";
+}
+
+function updateScriptEditorValue(value) {
+  const nextValue = String(value || "");
+  elements.scriptEditor.value = nextValue;
+  if (state.scriptMonaco && state.scriptMonaco.getValue() !== nextValue) {
+    state.scriptMonaco.setValue(nextValue);
+  }
+}
+
+function syncScriptEditorFromMonaco() {
+  if (!state.scriptMonaco) {
+    return;
+  }
+  elements.scriptEditor.value = state.scriptMonaco.getValue();
+  clearScriptMarkers();
+  setValidationResult("脚本已修改，保存时会自动校验。", "warn");
+}
+
+async function ensureScriptMonaco() {
+  if (state.scriptMonaco) {
+    return state.scriptMonaco;
+  }
+  if (state.scriptMonacoReady) {
+    return state.scriptMonacoReady;
+  }
+  if (!window.require || !elements.scriptMonacoMount) {
+    return null;
+  }
+  state.scriptMonacoReady = new Promise(resolve => {
+    window.require.config({ paths: { vs: "/vendor/monaco/vs" } });
+    window.require(["vs/editor/editor.main"], () => {
+      const editor = window.monaco.editor.create(elements.scriptMonacoMount, {
+        value: elements.scriptEditor.value || "",
+        language: "javascript",
+        theme: getScriptEditorTheme(),
+        automaticLayout: true,
+        minimap: { enabled: false },
+        fontSize: 13,
+        tabSize: 2,
+        insertSpaces: true,
+        scrollBeyondLastLine: false,
+      });
+      editor.onDidChangeModelContent(syncScriptEditorFromMonaco);
+      editor.addCommand(window.monaco.KeyMod.CtrlCmd | window.monaco.KeyCode.KeyS, () => {
+        handleSaveScript().catch(error => {
+          setStatus(error.message);
+          showErrorToast(error);
+        });
+      });
+      state.scriptMonaco = editor;
+      resolve(editor);
+    }, () => resolve(null));
+  });
+  return state.scriptMonacoReady;
+}
+
+function layoutScriptMonaco() {
+  state.scriptMonaco?.layout();
+}
+
+function focusScriptMonaco() {
+  state.scriptMonaco?.focus();
 }
 
 function escapeHtml(value) {
@@ -660,9 +783,9 @@ async function loadSources() {
 
 async function loadScript() {
   const result = await request("/api/scripts/current");
-  elements.scriptEditor.value = result.content;
+  updateScriptEditorValue(result.content);
   elements.scriptPreview.textContent = previewText(result.content, "脚本未设置");
-  updateScriptLineNumbers();
+  clearScriptMarkers();
   setValidationResult("尚未校验", "neutral");
 }
 
@@ -872,12 +995,14 @@ async function handleValidateScript() {
       method: "POST",
       body: JSON.stringify({ content: elements.scriptEditor.value }),
     });
+    clearScriptMarkers();
     setValidationResult(result.message, result.warningCount > 0 ? "warn" : "ok");
     setStatus(result.message);
     showToast(result.message, result.warningCount > 0 ? "warn" : "ok");
     await loadLogs();
     return result;
   } catch (error) {
+    applyScriptMarkers(error.message);
     setValidationResult(`校验失败：${error.message}`, "error");
     setStatus(error.message);
     await loadLogs().catch(() => {});
@@ -888,9 +1013,9 @@ async function handleValidateScript() {
 async function handleResetScript() {
   setStatus("正在恢复默认脚本...");
   const result = await request("/api/scripts/reset", { method: "POST" });
-  elements.scriptEditor.value = result.content;
+  updateScriptEditorValue(result.content);
   elements.scriptPreview.textContent = previewText(result.content, "脚本未设置");
-  updateScriptLineNumbers();
+  clearScriptMarkers();
   setValidationResult("已恢复为默认脚本，建议直接保存或再次修改。", "warn");
   setStatus("默认脚本已恢复到编辑器");
   showToast("默认脚本已恢复到编辑器", "warn");
@@ -900,6 +1025,11 @@ async function handleResetScript() {
 async function handleOpenScriptEditor() {
   await loadScript();
   openModal(elements.scriptModal);
+  await ensureScriptMonaco();
+  requestAnimationFrame(() => {
+    layoutScriptMonaco();
+    focusScriptMonaco();
+  });
 }
 
 async function handleSaveScript() {
@@ -908,12 +1038,14 @@ async function handleSaveScript() {
   try {
     const result = await request("/api/scripts/current", { method: "PUT", body: JSON.stringify({ content: elements.scriptEditor.value }) });
     elements.scriptPreview.textContent = previewText(elements.scriptEditor.value, "脚本未设置");
+    clearScriptMarkers();
     setValidationResult(result.validation.message, result.validation.warningCount > 0 ? "warn" : "ok");
     closeModal(elements.scriptModal);
     setStatus(`脚本已保存。${result.validation.message}`);
     showToast("脚本已保存", "ok");
     await loadLogs();
   } catch (error) {
+    applyScriptMarkers(error.message);
     setValidationResult(`保存失败：${error.message}`, "error");
     setStatus(error.message);
     await loadLogs().catch(() => {});
@@ -1066,16 +1198,16 @@ elements.closeTextEditorModalButton.addEventListener("click", () => closeModal(e
 elements.applyTextEditorModalButton.addEventListener("click", applyTextEditorModal);
 elements.closeSourceContentModalButton.addEventListener("click", () => closeModal(elements.sourceContentModal));
 elements.scriptEditor.addEventListener("input", () => {
-  updateScriptLineNumbers();
   setValidationResult("脚本已修改，保存时会自动校验。", "warn");
 });
-elements.scriptEditor.addEventListener("scroll", updateScriptLineNumbers);
+elements.scriptModal.addEventListener("transitionend", layoutScriptMonaco);
 elements.resetScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleResetScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.validateScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleValidateScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.saveScriptButton.addEventListener("click", () => { setActiveSection("transform"); handleSaveScript().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 elements.saveRawConfigButton.addEventListener("click", () => { setActiveSection("transform"); handleSaveRawConfig().catch(error => { setStatus(error.message); showErrorToast(error); }); });
 
 applyTheme(state.theme, { persist: false });
+ensureScriptMonaco().catch(() => {});
 releaseThemePreload();
 bootstrap().catch(error => { setStatus(error.message); showErrorToast(error); });
 
