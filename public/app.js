@@ -87,6 +87,7 @@ const elements = {
   autoRefreshEnabled: document.querySelector("#autoRefreshEnabled"),
   autoBuildEnabled: document.querySelector("#autoBuildEnabled"),
   refreshIntervalMinutes: document.querySelector("#refreshIntervalMinutes"),
+  proxyUrl: document.querySelector("#proxyUrl"),
   rawTopConfigEnabled: document.querySelector("#rawTopConfigEnabled"),
   systemSummary: document.querySelector("#systemSummary"),
   enabledSourcesStat: document.querySelector("#enabledSourcesStat"),
@@ -529,6 +530,7 @@ function renderSystem() {
   elements.autoRefreshEnabled.checked = settings.autoRefreshEnabled;
   elements.autoBuildEnabled.checked = settings.autoBuildEnabled;
   elements.refreshIntervalMinutes.value = settings.refreshIntervalMinutes;
+  elements.proxyUrl.value = settings.proxyUrl || "";
   elements.rawTopConfigEnabled.checked = settings.rawTopConfigEnabled;
   elements.rawTopConfigContent.value = settings.rawTopConfigContent || "";
   elements.rawTopConfigPreview.textContent = previewText(settings.rawTopConfigContent, "顶部配置块未设置");
@@ -569,6 +571,14 @@ function renderSystem() {
         </div>
         <strong class="system-summary-value">${escapeHtml(settings.publicBaseUrl || "跟随当前请求地址")}</strong>
         <div class="system-summary-note">安全订阅链接已生成，可按需显示、复制或轮换令牌</div>
+      </article>
+      <article class="system-summary-card">
+        <div class="system-summary-header">
+          <span class="stat-label">拉取代理</span>
+          <span class="badge">${settings.proxyUrl ? "已启用" : "直连"}</span>
+        </div>
+        <strong class="system-summary-value">${escapeHtml(settings.proxyUrl || "未配置代理")}</strong>
+        <div class="system-summary-note">仅影响远程订阅刷新，本地和内联来源不受影响</div>
       </article>
     </div>
     ${settings.lastSchedulerError ? `<div class="system-summary-error">最近调度错误：${escapeHtml(settings.lastSchedulerError)}</div>` : ""}
@@ -1080,6 +1090,7 @@ async function handleSaveSystem(options = {}) {
       refreshIntervalMinutes: Number(elements.refreshIntervalMinutes.value || 30),
       rawTopConfigEnabled: elements.rawTopConfigEnabled.checked,
       rawTopConfigContent: elements.rawTopConfigContent.value,
+      proxyUrl: elements.proxyUrl.value,
       rebuildOutput: options.rebuildOutput === true,
     }),
   });

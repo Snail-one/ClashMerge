@@ -18,6 +18,7 @@ function createDefaultSystemSettings() {
     refreshIntervalMinutes: 30,
     rawTopConfigEnabled: false,
     rawTopConfigContent: "mode: rule\nmixed-port: 35931\nallow-lan: true\nlog-level: info\nipv6: true\nexternal-controller: ''\n",
+    proxyUrl: "",
     subscriptionToken: crypto.randomBytes(24).toString("hex"),
     managementToken: crypto.randomBytes(24).toString("hex"),
     publicBaseUrl: String(process.env.PUBLIC_BASE_URL || "").trim(),

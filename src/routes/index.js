@@ -26,10 +26,12 @@ const contentTypes = {
 };
 const loginAttempts = new Map();
 const apiRateLimits = new Map();
+let lastRateLimitPruneAt = 0;
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS || 5);
 const LOGIN_WINDOW_MS = Number(process.env.LOGIN_WINDOW_MS || 10 * 60 * 1000);
 const API_RATE_LIMIT_MAX = Number(process.env.API_RATE_LIMIT_MAX || 240);
 const API_RATE_LIMIT_WINDOW_MS = Number(process.env.API_RATE_LIMIT_WINDOW_MS || 60 * 1000);
+const RATE_LIMIT_PRUNE_INTERVAL_MS = Number(process.env.RATE_LIMIT_PRUNE_INTERVAL_MS || 60 * 1000);
 
 async function sendFile(res, filePath) {
   const ext = path.extname(filePath);
@@ -49,8 +51,9 @@ async function sendFile(res, filePath) {
 async function serveStatic(urlPath, res) {
   const relativePath = urlPath === "/" ? "index.html" : urlPath.replace(/^\//, "");
   const filePath = path.resolve(publicDir, relativePath);
+  const relativeToPublic = path.relative(publicDir, filePath);
 
-  if (!filePath.startsWith(publicDir)) {
+  if (relativeToPublic.startsWith("..") || path.isAbsolute(relativeToPublic)) {
     sendJson(res, 403, { error: "Forbidden" });
     return true;
   }
@@ -107,6 +110,9 @@ function sendManagementTokenHint(res) {
 
 function getAttemptEntry(store, key, windowMs) {
   const now = Date.now();
+  if (now - lastRateLimitPruneAt > RATE_LIMIT_PRUNE_INTERVAL_MS) {
+    pruneExpiredAttempts(now);
+  }
   const current = store.get(key);
 
   if (!current || current.resetAt <= now) {
@@ -116,6 +122,17 @@ function getAttemptEntry(store, key, windowMs) {
   }
 
   return current;
+}
+
+function pruneExpiredAttempts(now = Date.now()) {
+  lastRateLimitPruneAt = now;
+  for (const store of [loginAttempts, apiRateLimits]) {
+    for (const [key, entry] of store.entries()) {
+      if (!entry || entry.resetAt <= now) {
+        store.delete(key);
+      }
+    }
+  }
 }
 
 function clearLoginAttempts(req) {
@@ -431,6 +448,7 @@ async function handleRequest(req, res, appContext = {}) {
         refreshIntervalMinutes: Math.max(1, Number(body.refreshIntervalMinutes) || current.refreshIntervalMinutes),
         rawTopConfigEnabled,
         rawTopConfigContent,
+        proxyUrl: typeof body.proxyUrl === "string" ? body.proxyUrl.trim() : current.proxyUrl,
       });
       await restartScheduler();
 

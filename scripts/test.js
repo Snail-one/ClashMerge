@@ -29,6 +29,7 @@ const { mergeConfigs } = require("../src/core/merge");
 const { addSource, listSources, updateSource } = require("../src/core/sources");
 const { runScheduledCycle } = require("../src/core/scheduler");
 const { readPersistedSystemSettings, readSystemSettings } = require("../src/core/system");
+const { runTransformContent } = require("../src/core/transform");
 
 const fixtureAPath = path.join(paths.rootDir, "tests", "fixtures", "source-a.yaml");
 const fixtureBPath = path.join(paths.rootDir, "tests", "fixtures", "source-b.yaml");
@@ -149,6 +150,24 @@ async function testGeneratedYamlMatchesMihomoShape() {
   assert.equal(parsed.proxies.length, 1);
   assert.equal(parsed.proxyGroups.length, 1);
   assert.deepEqual(parsed.rules, ["MATCH,全部节点"]);
+}
+
+async function testAsyncTransform() {
+  const output = await runTransformContent(
+    `async function transform(config) {
+  return {
+    ...config,
+    rules: ["MATCH,DIRECT"],
+  };
+}
+
+module.exports = { transform };
+`,
+    { proxies: [], "proxy-groups": [] },
+    { reason: "test" },
+  );
+
+  assert.deepEqual(output.rules, ["MATCH,DIRECT"]);
 }
 
 async function testTemplateSourceSelection() {
@@ -738,6 +757,7 @@ async function main() {
   await run("mergeConfigs", testMergeConfigs);
   await run("buildConfigWithRawTopConfig", testBuildConfigWithRawTopConfig);
   await run("generatedYamlMatchesMihomoShape", testGeneratedYamlMatchesMihomoShape);
+  await run("asyncTransform", testAsyncTransform);
   await run("templateSourceSelection", testTemplateSourceSelection);
   await run("collectBuildInputWithTemplateSource", testCollectBuildInputWithTemplateSource);
   await run("buildUsesRemoteCacheWithoutRefetch", testBuildUsesRemoteCacheWithoutRefetch);
@@ -755,8 +775,6 @@ main().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
-
-
 
 
 

@@ -15,14 +15,13 @@ function getManagementTokenSource() {
 
 function applyEnvironmentOverrides(settings) {
   const managementToken = getEnvironmentManagementToken();
-
-  if (!managementToken) {
-    return settings;
-  }
+  const configuredProxyUrl = String(settings.proxyUrl || "").trim();
+  const environmentProxyUrl = String(process.env.REMOTE_SOURCE_PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY || "").trim();
 
   return {
     ...settings,
-    managementToken,
+    ...(managementToken ? { managementToken } : {}),
+    proxyUrl: configuredProxyUrl || environmentProxyUrl,
   };
 }
 
@@ -90,6 +89,7 @@ function sanitizeSystemSettings(settings) {
     refreshIntervalMinutes: settings.refreshIntervalMinutes,
     rawTopConfigEnabled: settings.rawTopConfigEnabled,
     rawTopConfigContent: settings.rawTopConfigContent,
+    proxyUrl: settings.proxyUrl,
     publicBaseUrl: settings.publicBaseUrl,
     lastSchedulerRunAt: settings.lastSchedulerRunAt,
     lastSchedulerStatus: settings.lastSchedulerStatus,

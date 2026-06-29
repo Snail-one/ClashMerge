@@ -154,7 +154,7 @@ async function runTransformInProcess(scriptContent, config, context) {
   const transform = loadTransformFromContent(scriptContent);
   const input = deepFreeze(sanitizeConfig(config));
   const safeContext = deepFreeze(sanitizeConfig(context));
-  const output = transform(input, safeContext);
+  const output = await transform(input, safeContext);
 
   if (!output || typeof output !== "object") {
     throw new Error("Transform must return a config object");

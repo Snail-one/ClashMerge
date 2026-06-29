@@ -3,9 +3,11 @@ const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
 const path = require("node:path");
+const tls = require("node:tls");
 
 const { paths } = require("../config/paths");
 const { resolveRemoteHostname, validateLocalSourcePath, validateRemoteSourceUrl } = require("./security");
+const { readSystemSettings } = require("./system");
 
 const DEFAULT_FETCH_TIMEOUT_MS = Number(process.env.REMOTE_SOURCE_TIMEOUT_MS || 10000);
 const MAX_REMOTE_SOURCE_BYTES = Number(process.env.MAX_REMOTE_SOURCE_BYTES || 4 * 1024 * 1024);
@@ -59,13 +61,170 @@ function readResponseText(response) {
   });
 }
 
-function requestPinnedRemoteText(urlString, redirectCount = 0) {
+function createRequestHeaders(parsedUrl) {
+  return {
+    Host: parsedUrl.host,
+    Accept: "text/yaml, application/yaml, text/plain;q=0.9, */*;q=0.1",
+    "User-Agent": "proxy-manager/1.0",
+  };
+}
+
+function parseProxyUrl(proxyUrl) {
+  const input = String(proxyUrl || "").trim();
+  if (!input) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error("Proxy URL is invalid");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Proxy URL must use http or https");
+  }
+
+  return parsed;
+}
+
+function getProxyAuthorizationHeader(proxyUrl) {
+  if (!proxyUrl.username && !proxyUrl.password) {
+    return null;
+  }
+
+  return `Basic ${Buffer.from(`${decodeURIComponent(proxyUrl.username)}:${decodeURIComponent(proxyUrl.password)}`).toString("base64")}`;
+}
+
+function createProxyConnectSocket(proxyUrl, parsedUrl, selectedAddress, selectedFamily) {
+  return new Promise((resolve, reject) => {
+    const proxyClient = proxyUrl.protocol === "https:" ? https : http;
+    const proxyAuth = getProxyAuthorizationHeader(proxyUrl);
+    const headers = {
+      Host: `${parsedUrl.hostname}:${parsedUrl.port || 443}`,
+    };
+
+    if (proxyAuth) {
+      headers["Proxy-Authorization"] = proxyAuth;
+    }
+
+    const request = proxyClient.request({
+      protocol: proxyUrl.protocol,
+      hostname: proxyUrl.hostname,
+      port: proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80),
+      method: "CONNECT",
+      path: `${selectedFamily === 6 ? `[${selectedAddress}]` : selectedAddress}:${parsedUrl.port || 443}`,
+      headers,
+      timeout: DEFAULT_FETCH_TIMEOUT_MS,
+    });
+
+    request.on("connect", (response, socket) => {
+      if (response.statusCode !== 200) {
+        socket.destroy();
+        reject(new Error(`Proxy CONNECT failed: ${response.statusCode} ${response.statusMessage || ""}`.trim()));
+        return;
+      }
+
+      const tlsSocket = tls.connect({
+        socket,
+        servername: parsedUrl.hostname,
+      });
+      tlsSocket.once("secureConnect", () => resolve(tlsSocket));
+      tlsSocket.once("error", reject);
+    });
+
+    request.on("timeout", () => {
+      request.destroy(new Error(`Proxy CONNECT timed out after ${DEFAULT_FETCH_TIMEOUT_MS}ms`));
+    });
+
+    request.on("error", reject);
+    request.end();
+  });
+}
+
+async function createProxiedHttpsRequestOptions(proxyUrl, parsedUrl, selectedAddress, selectedFamily) {
+  const socket = await createProxyConnectSocket(proxyUrl, parsedUrl, selectedAddress, selectedFamily);
+  return {
+    protocol: parsedUrl.protocol,
+    hostname: parsedUrl.hostname,
+    port: parsedUrl.port || undefined,
+    path: `${parsedUrl.pathname}${parsedUrl.search}`,
+    method: "GET",
+    headers: createRequestHeaders(parsedUrl),
+    createConnection() {
+      return socket;
+    },
+    timeout: DEFAULT_FETCH_TIMEOUT_MS,
+  };
+}
+
+function createHttpProxyRequestOptions(proxyUrl, parsedUrl, selectedAddress, selectedFamily) {
+  const proxyAuth = getProxyAuthorizationHeader(proxyUrl);
+  const targetUrl = new URL(parsedUrl.toString());
+  targetUrl.hostname = selectedFamily === 6 ? `[${selectedAddress}]` : selectedAddress;
+
+  const headers = createRequestHeaders(parsedUrl);
+  if (proxyAuth) {
+    headers["Proxy-Authorization"] = proxyAuth;
+  }
+
+  return {
+    protocol: proxyUrl.protocol,
+    hostname: proxyUrl.hostname,
+    port: proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80),
+    path: targetUrl.toString(),
+    method: "GET",
+    headers,
+    servername: proxyUrl.hostname,
+    timeout: DEFAULT_FETCH_TIMEOUT_MS,
+  };
+}
+
+async function createRemoteRequestOptions(parsedUrl, selectedAddress, selectedFamily, proxyUrl) {
+  if (proxyUrl) {
+    if (parsedUrl.protocol === "https:") {
+      return createProxiedHttpsRequestOptions(proxyUrl, parsedUrl, selectedAddress, selectedFamily);
+    }
+
+    return createHttpProxyRequestOptions(proxyUrl, parsedUrl, selectedAddress, selectedFamily);
+  }
+
+  return {
+    protocol: parsedUrl.protocol,
+    hostname: parsedUrl.hostname,
+    port: parsedUrl.port || undefined,
+    path: `${parsedUrl.pathname}${parsedUrl.search}`,
+    method: "GET",
+    headers: createRequestHeaders(parsedUrl),
+    servername: parsedUrl.hostname,
+    lookup(hostname, options, callback) {
+      const done = typeof options === "function" ? options : callback;
+      if (options && typeof options === "object" && options.all === true) {
+        done(null, [{ address: selectedAddress, family: selectedFamily }]);
+        return;
+      }
+      done(null, selectedAddress, selectedFamily);
+    },
+    timeout: DEFAULT_FETCH_TIMEOUT_MS,
+  };
+}
+
+async function requestPinnedRemoteText(urlString, redirectCount = 0, proxyUrlString = "") {
   return new Promise(async (resolve, reject) => {
     let parsedUrl;
+    let proxyUrl;
     try {
       parsedUrl = new URL(urlString);
     } catch {
       reject(new Error("Remote source URL is invalid"));
+      return;
+    }
+
+    try {
+      proxyUrl = parseProxyUrl(proxyUrlString);
+    } catch (error) {
+      reject(error);
       return;
     }
 
@@ -90,28 +249,17 @@ function requestPinnedRemoteText(urlString, redirectCount = 0) {
     }
 
     const client = parsedUrl.protocol === "https:" ? https : http;
-    const request = client.request({
-      protocol: parsedUrl.protocol,
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || undefined,
-      path: `${parsedUrl.pathname}${parsedUrl.search}`,
-      method: "GET",
-      headers: {
-        Host: parsedUrl.host,
-        Accept: "text/yaml, application/yaml, text/plain;q=0.9, */*;q=0.1",
-        "User-Agent": "proxy-manager/1.0",
-      },
-      servername: parsedUrl.hostname,
-      lookup(hostname, options, callback) {
-        const done = typeof options === "function" ? options : callback;
-        if (options && typeof options === "object" && options.all === true) {
-          done(null, [{ address: selected.address, family: selectedFamily }]);
-          return;
-        }
-        done(null, selected.address, selectedFamily);
-      },
-      timeout: DEFAULT_FETCH_TIMEOUT_MS,
-    }, async response => {
+    let requestOptions;
+    try {
+      requestOptions = await createRemoteRequestOptions(parsedUrl, selected.address, selectedFamily, proxyUrl);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const requestClient = proxyUrl && parsedUrl.protocol === "http:"
+      ? (proxyUrl.protocol === "https:" ? https : http)
+      : client;
+    const request = requestClient.request(requestOptions, async response => {
       const statusCode = response.statusCode || 0;
       if ([301, 302, 303, 307, 308].includes(statusCode)) {
         const location = response.headers.location;
@@ -129,7 +277,7 @@ function requestPinnedRemoteText(urlString, redirectCount = 0) {
 
         try {
           const nextUrl = await validateRemoteSourceUrl(new URL(location, parsedUrl).toString());
-          resolve(await requestPinnedRemoteText(nextUrl, redirectCount + 1));
+          resolve(await requestPinnedRemoteText(nextUrl, redirectCount + 1, proxyUrlString));
         } catch (error) {
           reject(error);
         }
@@ -164,7 +312,8 @@ function requestPinnedRemoteText(urlString, redirectCount = 0) {
 async function loadSourceContent(source) {
   if (source.type === "remote") {
     const url = await validateRemoteSourceUrl(source.url);
-    const content = await requestPinnedRemoteText(url);
+    const settings = await readSystemSettings();
+    const content = await requestPinnedRemoteText(url, 0, settings.proxyUrl);
     await cacheSourceContent(source.id, content);
     return content;
   }
